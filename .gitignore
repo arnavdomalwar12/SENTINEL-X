@@ -1,20 +1,24 @@
-__pycache__/
-*.py[cod]
+# Virtual Environments
 .venv/
 venv/
-.pytest_cache/
+env/
 
-# Model weights download on first run, not committed.
+# Python Cache
+__pycache__/
+*.pyc
+
+# Heavy Models & Weights
 models/*.pt
+models/*.onnx
+*.weights
 
-# Runtime output
+# Local Data & Evidence
 data/events/*.jsonl
 data/evidence/*.jpg
 data/evidence/*.mp4
-data/*.db
+*.sqlite3
 
-# Generated demo assets
-data/samples/bus.jpg
-data/samples/border_demo.mp4
-# Training datasets - large, not committed.
-data/datasets/
+# IDE & OS Files
+.vscode/
+.idea/
+.DS_Store
