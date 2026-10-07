@@ -1,0 +1,2445 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SENTINEL-X — Command Center</title>
+<style>
+/* No web fonts, no CDN and no script from anywhere else in this file. A demo
+   runs on whatever network the room has, and a dashboard that needs the
+   internet to work is a dashboard that breaks in front of the people judging
+   it. The one thing fetched from outside is map imagery, and the map works on
+   a plain coordinate grid without it. */
+:root{
+  --bg:#0a0f16; --panel:#111823; --panel-2:#0d141d; --line:#1e2836;
+  --ink:#e8eef5; --ink-2:#93a3b8; --ink-3:#5d6e85;
+  --accent:#22d3ee; --accent-dim:#0e7490;
+  --critical:#f43f5e; --high:#fb923c; --medium:#facc15; --low:#38bdf8;
+  --ok:#34d399;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font:14px/1.5 "Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+  min-height:100vh;
+}
+.shell{display:grid;grid-template-columns:220px 1fr;min-height:100vh}
+
+/* ---------------------------------------------------------------- sidebar */
+.side{background:var(--panel-2);border-right:1px solid var(--line);
+      display:flex;flex-direction:column}
+.brand{padding:18px 16px;border-bottom:1px solid var(--line)}
+.brand h1{font-size:17px;font-weight:600;letter-spacing:.06em;color:var(--ink)}
+.brand span{font-size:10px;letter-spacing:.12em;color:var(--ink-3);text-transform:uppercase}
+.nav{padding:12px 8px;flex:1}
+.nav a{display:block;padding:9px 12px;border-radius:6px;color:var(--ink-2);
+       text-decoration:none;font-size:13px;margin-bottom:2px;cursor:pointer}
+.nav a:hover{background:#16202c;color:var(--ink)}
+.nav a.on{background:#12303a;color:var(--accent)}
+.side-foot{padding:14px 16px;border-top:1px solid var(--line);
+           font-size:11px;color:var(--ink-3);line-height:1.6}
+
+/* ------------------------------------------------------------------- main */
+.main{display:flex;flex-direction:column;min-width:0}
+.top{display:flex;align-items:center;gap:18px;padding:14px 20px;
+     border-bottom:1px solid var(--line);background:var(--panel-2)}
+.top h2{font-size:17px;font-weight:600;color:var(--accent)}
+.top p{font-size:12px;color:var(--ink-3)}
+.top .spacer{flex:1}
+.pill{display:flex;align-items:center;gap:7px;background:var(--panel);
+      border:1px solid var(--line);border-radius:7px;padding:7px 12px;font-size:12px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--ink-3)}
+.dot.live{background:var(--ok)}
+.dot.dead{background:var(--critical)}
+
+.body{padding:16px 20px 20px;display:flex;flex-direction:column;gap:14px}
+
+/* ------------------------------------------------------------------ cards */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+      padding:13px 15px;border-left:3px solid var(--line)}
+.stat.c-crit{border-left-color:var(--critical)}
+.stat.c-all{border-left-color:var(--high)}
+.stat.c-cam{border-left-color:var(--accent)}
+.stat.c-fps{border-left-color:var(--ok)}
+.stat.c-inc{border-left-color:#a78bfa}
+.stat h3{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+         color:var(--ink-3);font-weight:600;margin-bottom:7px}
+.stat .n{font-size:27px;font-weight:600;line-height:1.1}
+.stat .s{font-size:11.5px;color:var(--ink-3);margin-top:3px}
+
+.grid{display:grid;grid-template-columns:1.55fr 1fr;gap:14px;align-items:start}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;align-items:start}
+@media(max-width:1150px){.grid,.grid-3{grid-template-columns:1fr}}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+       overflow:hidden;min-width:0}
+.panel > header{display:flex;align-items:center;gap:9px;padding:11px 14px;
+                border-bottom:1px solid var(--line)}
+.panel > header h3{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;
+                   font-weight:600;color:var(--ink-2)}
+.panel > header .spacer{flex:1}
+.panel > header .tag{font-size:11px;color:var(--ink-3)}
+.panel .pad{padding:13px 14px}
+.tab{background:none;border:1px solid var(--line);color:var(--ink-3);
+     border-radius:5px;padding:3px 10px;font-size:11px;cursor:pointer;
+     font-family:inherit}
+.tab:hover{color:var(--ink)}
+.tab.on{color:var(--accent);border-color:var(--accent-dim);background:#0d2630}
+.ev{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.ev a{font-size:11.5px;color:var(--accent);text-decoration:none;
+      border:1px solid var(--accent-dim);border-radius:5px;padding:3px 9px}
+.ev a:hover{background:#0d2630}
+.crop{max-width:100%;border:1px solid var(--line);border-radius:6px;margin-top:8px}
+
+/* Views. Panels are moved between the overview grid and their own page rather
+   than duplicated - a second copy would mean duplicate ids and, worse, a
+   second live <img> pulling a second video stream off the same camera. */
+.view{display:none;flex-direction:column;gap:14px}
+.view.on{display:flex}
+.solo{display:flex;flex-direction:column;gap:14px}
+.hint{font-size:12px;color:var(--ink-3);line-height:1.65}
+.hint b{color:var(--ink-2);font-weight:500}
+
+/* ------------------------------------------------------------ zone editor */
+.zed{display:grid;grid-template-columns:1fr 300px;gap:14px;align-items:start}
+@media(max-width:1000px){.zed{grid-template-columns:1fr}}
+.canvas{position:relative;border:1px solid var(--line);border-radius:8px;
+        overflow:hidden;background:#070b11;cursor:crosshair}
+.canvas img{display:block;width:100%}
+.canvas svg{position:absolute;inset:0;width:100%;height:100%}
+.canvas .waiting{padding:60px 20px;text-align:center;color:var(--ink-3);font-size:12.5px}
+.field{margin-bottom:11px}
+.field label{display:block;font-size:10.5px;letter-spacing:.09em;
+             text-transform:uppercase;color:var(--ink-3);font-weight:600;margin-bottom:5px}
+.field input,.field select{width:100%;background:var(--panel-2);color:var(--ink);
+  border:1px solid var(--line);border-radius:6px;padding:7px 9px;font-size:12.5px;
+  font-family:inherit}
+.field input:focus,.field select:focus{outline:none;border-color:var(--accent-dim)}
+/* Shown when the server has a newer dashboard than this tab. */
+.updated{position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:60;
+  display:flex;align-items:center;gap:12px;background:#0c2a33;border:1px solid #1d6f80;
+  color:var(--ink);padding:8px 8px 8px 14px;border-radius:8px;font-size:12.5px;
+  box-shadow:0 10px 28px #000a}
+.updated[hidden]{display:none}
+.btn{background:var(--accent-dim);color:#e8feff;border:none;border-radius:6px;
+     padding:8px 14px;font-size:12.5px;cursor:pointer;font-family:inherit;font-weight:500}
+.btn:hover{background:#0891a8}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.btn.ghost{background:none;border:1px solid var(--line);color:var(--ink-2)}
+.btn.ghost:hover{background:#16202c;color:var(--ink)}
+.btn.danger{background:none;border:1px solid #4c1526;color:var(--critical)}
+.btn.danger:hover{background:#2a0d16}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px}
+.zlist{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+.zrow{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:12.5px}
+.zrow .sw{width:10px;height:10px;border-radius:3px;flex:none}
+.zrow .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.zrow .k{font-size:10.5px;color:var(--ink-3)}
+.note{font-size:12px;padding:9px 11px;border-radius:6px;margin-top:11px;display:none}
+.note.on{display:block}
+.note.ok{background:#08251c;border:1px solid #14503c;color:var(--ok)}
+.note.bad{background:#2a0d16;border:1px solid #4c1526;color:var(--critical)}
+
+/* --------------------------------------------------------------- cameras */
+.cams{display:grid;grid-template-columns:repeat(3,1fr);
+      gap:10px;padding:13px 14px}
+@media(max-width:900px){.cams{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:600px){.cams{grid-template-columns:1fr}}
+.cam{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#070b11}
+.cam .bar{display:flex;align-items:center;gap:6px;padding:7px 9px;
+          background:var(--panel-2);font-size:11.5px}
+.cam .bar b{font-weight:500;color:var(--ink)}
+.cam .bar .site{color:var(--ink-3)}
+.cam .bar .spacer{flex:1}
+.cam .bar .st{font-size:10px;letter-spacing:.05em}
+.cam .shot{display:block;width:100%;aspect-ratio:16/10;object-fit:cover;background:#070b11}
+.cam .none{display:flex;align-items:center;justify-content:center;
+           aspect-ratio:16/10;color:var(--ink-3);font-size:11.5px;text-align:center;padding:10px}
+
+/* ---------------------------------------------------------------- alerts */
+.alerts{max-height:430px;overflow-y:auto}
+.alert{padding:10px 14px;border-bottom:1px solid var(--line);
+       border-left:3px solid var(--line);cursor:pointer}
+.alert:hover{background:#131c27}
+.alert.CRITICAL{border-left-color:var(--critical)}
+.alert.HIGH{border-left-color:var(--high)}
+.alert.MEDIUM{border-left-color:var(--medium)}
+.alert.LOW{border-left-color:var(--low)}
+.alert .r1{display:flex;align-items:baseline;gap:8px}
+.alert .ttl{font-size:13px;font-weight:500;flex:1;min-width:0;
+            overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.alert .t{font-size:11px;color:var(--ink-3);white-space:nowrap}
+.alert .r2{display:flex;align-items:center;gap:8px;margin-top:3px}
+.alert .meta{font-size:11.5px;color:var(--ink-3);flex:1;min-width:0;
+             overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.badge{font-size:9.5px;font-weight:600;letter-spacing:.07em;padding:2px 7px;
+       border-radius:4px;border:1px solid}
+.badge.CRITICAL{color:var(--critical);border-color:#4c1526;background:#2a0d16}
+.badge.HIGH{color:var(--high);border-color:#4a2a12;background:#2a1808}
+.badge.MEDIUM{color:var(--medium);border-color:#453a0f;background:#241f06}
+.badge.LOW{color:var(--low);border-color:#123449;background:#08202e}
+.empty{padding:26px 14px;text-align:center;color:var(--ink-3);font-size:12.5px}
+
+/* ------------------------------------------------------------ behaviours */
+.beh{display:flex;flex-direction:column;gap:8px;padding:13px 14px}
+.beh .row{display:flex;align-items:center;gap:9px;font-size:12.5px}
+.beh .row .nm{flex:1;color:var(--ink-2);overflow:hidden;
+              text-overflow:ellipsis;white-space:nowrap}
+.beh .row .ct{color:var(--ink);font-variant-numeric:tabular-nums}
+.beh .track{height:5px;border-radius:3px;background:#16202c;overflow:hidden;
+            width:88px;flex:none}
+.beh .fill{height:100%;background:var(--accent)}
+
+/* ------------------------------------------------------------------- map */
+.mapwrap{padding:13px 14px}
+.mapbox{position:relative;border:1px solid var(--line);border-radius:8px;overflow:hidden;
+        background:#070d14;user-select:none;cursor:grab}
+.mapbox.placing{cursor:crosshair}
+.mapbox.dragging{cursor:grabbing}
+.mapbox > svg{display:block;width:100%;height:auto}
+/* Imagery toned down to sit inside a dark console instead of glaring out of it. */
+.maptiles{filter:brightness(.74) saturate(.82) contrast(1.06)}
+.mapctl{position:absolute;left:9px;top:9px;display:flex;flex-direction:column;gap:5px}
+.mapctl button{width:28px;height:28px;display:grid;place-items:center;padding:0;
+  background:#0b1119e8;color:var(--ink);border:1px solid #2a3749;border-radius:6px;
+  font:600 17px/1 "Segoe UI",system-ui,sans-serif;cursor:pointer}
+.mapctl button:hover{background:#16202c;border-color:#3d4d63}
+.mapctl svg{width:15px;height:15px}
+.layermenu{position:absolute;left:44px;top:75px;z-index:3;min-width:132px;padding:4px;
+  background:#0b1119f5;border:1px solid #2a3749;border-radius:7px}
+.layermenu button{display:block;width:100%;text-align:left;background:none;border:none;
+  color:var(--ink-2);padding:6px 9px;border-radius:5px;font:inherit;font-size:12px;cursor:pointer}
+.layermenu button:hover{background:#16202c;color:var(--ink)}
+.layermenu button.on{color:var(--accent)}
+.mapnote{position:absolute;left:46px;top:9px;right:9px;background:#0a0f16eb;
+  border:1px solid #5a4514;color:var(--medium);font-size:12px;line-height:1.5;
+  padding:7px 10px;border-radius:6px;pointer-events:none}
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:11.5px;color:var(--ink-3)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend svg{width:11px;height:15px}
+.legend i{display:inline-block;width:12px;height:9px;border-radius:2px}
+
+/* --------------------------------------------------------- camera placer */
+.readout{margin-left:auto;align-self:center;font-size:11.5px;color:var(--ink-3);
+         font-variant-numeric:tabular-nums}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.plist{border:1px solid var(--line);border-radius:6px;max-height:196px;overflow:auto}
+.plist button{display:flex;width:100%;align-items:center;gap:8px;background:none;
+  border:none;border-bottom:1px solid var(--line);color:var(--ink-2);padding:7px 9px;
+  font:inherit;font-size:12.5px;cursor:pointer;text-align:left}
+.plist button:last-child{border-bottom:none}
+.plist button:hover{background:#16202c;color:var(--ink)}
+.plist button.on{background:#0c2a33;color:var(--ink)}
+.plist .st{margin-left:auto;font-size:10.5px;color:var(--ink-3)}
+.plist .st.placed{color:var(--ok)}
+.field input[type=range]{padding:0;border:none;background:none;accent-color:var(--accent)}
+.field label span{color:var(--ink);text-transform:none;letter-spacing:0;font-weight:500}
+.aimrow.off{opacity:.38;pointer-events:none}
+.hint code{font-size:11.5px;color:var(--ink-2)}
+
+/* ----------------------------------------------------------------- fleet */
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+   color:var(--ink-3);font-weight:600;padding:9px 14px;border-bottom:1px solid var(--line)}
+td{padding:9px 14px;border-bottom:1px solid var(--line);color:var(--ink-2)}
+tr:last-child td{border-bottom:none}
+td.num{font-variant-numeric:tabular-nums;color:var(--ink)}
+
+/* ------------------------------------------------------------ add camera */
+[hidden]{display:none !important}
+.btn.sm{padding:4px 10px;font-size:11.5px}
+.modal.addcam{max-width:700px}
+.kinds{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:15px}
+@media(max-width:680px){.kinds{grid-template-columns:repeat(2,1fr)}}
+.kind{display:flex;flex-direction:column;gap:3px;text-align:left;background:var(--panel-2);
+  border:1px solid var(--line);border-radius:7px;padding:9px 10px;cursor:pointer;
+  font-family:inherit;color:var(--ink-3)}
+.kind b{font-size:12.5px;font-weight:600;color:var(--ink)}
+.kind span{font-size:10.5px;line-height:1.35}
+.kind:hover{border-color:#2a3749}
+.kind.on{border-color:var(--accent-dim);background:#0d2630}
+.kind.on b{color:var(--accent)}
+.inline{display:flex;gap:8px}
+.inline select{flex:1}
+.found{display:flex;flex-wrap:wrap;gap:6px;margin:-2px 0 10px}
+.ackind > .hint{margin-bottom:12px}
+.found .tab[disabled]{opacity:.5;cursor:not-allowed}
+.acsource{display:flex;gap:9px;align-items:baseline;font-size:11.5px;color:var(--ink-3);
+  margin:0 0 4px;word-break:break-all}
+.acsource code{color:var(--ink-2);font-size:11.5px}
+.acpreview{margin-top:12px;border:1px solid var(--line);border-radius:7px;overflow:hidden;
+  background:#070b11}
+.acpreview img{display:block;width:100%}
+.acdone{display:flex;flex-direction:column;gap:6px}
+td .srcl{display:block;font-size:10.5px;color:var(--ink-3);margin-top:2px}
+td.rm{width:34px;padding:0 10px 0 0;text-align:right}
+td.rm button{background:none;border:none;color:var(--ink-3);font-size:17px;line-height:1;
+  cursor:pointer;padding:2px 4px}
+td.rm button:hover{color:var(--critical)}
+
+/* ------------------------------------------------------------------ feed */
+.feed{display:flex;align-items:center;gap:12px;padding:9px 20px;
+      border-top:1px solid var(--line);background:var(--panel-2);
+      font-size:11.5px;color:var(--ink-2);overflow:hidden}
+.feed .lbl{display:flex;align-items:center;gap:6px;color:var(--accent);
+           font-weight:600;letter-spacing:.06em;font-size:10.5px;flex:none}
+.feed .items{display:flex;gap:20px;overflow:hidden;white-space:nowrap}
+.feed .items span b{color:var(--ink);font-weight:500}
+
+/* ----------------------------------------------------------------- modal */
+.scrim{position:fixed;inset:0;background:#000a;display:none;
+       align-items:center;justify-content:center;padding:24px;z-index:50}
+.scrim.on{display:flex}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:11px;
+       max-width:620px;width:100%;max-height:86vh;overflow-y:auto}
+.modal header{display:flex;align-items:center;gap:10px;padding:14px 17px;
+              border-bottom:1px solid var(--line)}
+.modal header h3{font-size:14px;font-weight:600;flex:1}
+.modal .x{background:none;border:none;color:var(--ink-3);font-size:19px;
+          cursor:pointer;line-height:1;padding:0 4px}
+.modal .x:hover{color:var(--ink)}
+.modal .pad{padding:15px 17px}
+.kv{display:grid;grid-template-columns:130px 1fr;gap:6px 12px;font-size:12.5px;
+    margin-bottom:14px}
+.kv dt{color:var(--ink-3)}
+.kv dd{color:var(--ink)}
+.factors{border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.factor{display:flex;gap:11px;padding:8px 12px;border-bottom:1px solid var(--line);
+        font-size:12.5px}
+.factor:last-child{border-bottom:none}
+.factor .p{font-variant-numeric:tabular-nums;font-weight:600;min-width:42px}
+.factor .p.up{color:var(--high)}
+.factor .p.down{color:var(--ok)}
+.factor .d{color:var(--ink-2);flex:1}
+.factor .d b{color:var(--ink);font-weight:500;display:block}
+.why{font-size:12.5px;color:var(--ink-2);line-height:1.65;margin-bottom:13px}
+h4.sec{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
+       color:var(--ink-3);font-weight:600;margin:0 0 8px}
+</style>
+</head>
+<body>
+<div class="updated" id="updated" hidden>
+  <span>The dashboard was updated on the server.</span>
+  <button class="btn" id="updReload">Reload</button>
+</div>
+<div class="shell">
+  <aside class="side">
+    <div class="brand">
+      <h1>SENTINEL-X</h1>
+      <span>Intelligent Border Surveillance</span>
+    </div>
+    <nav class="nav">
+      <a class="on" data-view="dashboard">Dashboard</a>
+      <a data-view="surveillance">Live surveillance</a>
+      <a data-view="alertsPage">Alerts &amp; incidents</a>
+      <a data-view="behPage">Behaviour intelligence</a>
+      <a data-view="mapPage">Map &amp; geofence</a>
+      <a data-view="fleetPage">Camera fleet</a>
+      <a data-view="zonesPage">Zone settings</a>
+    </nav>
+    <div class="side-foot">
+      Ministry of Home Affairs<br>Sashastra Seema Bal
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="top">
+      <div>
+        <h2>Command center</h2>
+        <p>Real-time border monitoring and threat intelligence</p>
+      </div>
+      <div class="spacer"></div>
+      <div class="pill"><span class="dot" id="linkDot"></span><span id="linkText">connecting</span></div>
+      <div class="pill"><span id="clock">--:--:--</span></div>
+    </div>
+
+    <div class="body">
+      <!-- ------------------------------------------------------- dashboard -->
+      <div class="view on" id="view-dashboard">
+        <div class="stats">
+          <div class="stat c-crit"><h3>Critical alerts</h3><div class="n" id="sCrit">0</div><div class="s">highest severity</div></div>
+          <div class="stat c-all"><h3>Total alerts</h3><div class="n" id="sTotal">0</div><div class="s" id="sLatest">none yet</div></div>
+          <div class="stat c-cam"><h3>Cameras online</h3><div class="n" id="sCams">0 / 0</div><div class="s" id="sSkipped">&nbsp;</div></div>
+          <div class="stat c-fps"><h3>Throughput</h3><div class="n" id="sFps">0.0</div><div class="s">frames per second, fleet</div></div>
+          <div class="stat c-inc"><h3>Incidents</h3><div class="n" id="sInc">0</div><div class="s">grouped, not per alert</div></div>
+        </div>
+
+        <div class="grid">
+          <div id="slot-cams"></div>
+          <div id="slot-alerts"></div>
+        </div>
+
+        <div class="grid-3">
+          <div id="slot-beh"></div>
+          <div id="slot-map"></div>
+          <div id="slot-fleet"></div>
+        </div>
+      </div>
+
+      <!-- ---------------------------------------------------- single pages -->
+      <div class="view" id="view-surveillance"><div class="solo" id="page-cams"></div></div>
+      <div class="view" id="view-alertsPage"><div class="solo" id="page-alerts"></div></div>
+      <div class="view" id="view-behPage"><div class="solo" id="page-beh"></div></div>
+      <!-- --------------------------------------------------- camera placer -->
+      <div class="view" id="view-mapPage">
+        <section class="panel">
+          <header><h3>Camera positions</h3><div class="spacer"></div>
+            <span class="tag" id="mTag">&nbsp;</span></header>
+          <div class="pad">
+            <p class="hint">Pick a camera, then <b>click the map</b> to put it there — or
+              paste its coordinates (in Google Maps, right-click the spot and click the
+              numbers to copy them). <b>Shift-click</b> to point it. Drag to move around,
+              scroll to zoom. Saved into the fleet file (<code>config/cameras.json</code>)
+              and shown at once — <b>no restart.</b></p>
+
+            <div class="zed" style="margin-top:13px">
+              <div>
+                <div class="mapbox placing" id="mCanvas"></div>
+                <div class="btnrow">
+                  <button class="btn ghost" id="mFit">Fit all cameras</button>
+                  <button class="btn ghost" id="mIndia">All India</button>
+                  <span class="readout" id="mCursor"></span>
+                </div>
+              </div>
+
+              <div>
+                <div class="field">
+                  <label>Camera</label>
+                  <div class="plist" id="mList"></div>
+                </div>
+                <div class="field">
+                  <label for="mPaste">Paste coordinates</label>
+                  <input id="mPaste" placeholder="28.613939, 77.209023" autocomplete="off">
+                </div>
+                <div class="pair">
+                  <div class="field">
+                    <label for="mLat">Latitude</label>
+                    <input id="mLat" type="number" step="0.000001" min="-90" max="90">
+                  </div>
+                  <div class="field">
+                    <label for="mLon">Longitude</label>
+                    <input id="mLon" type="number" step="0.000001" min="-180" max="180">
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="mSite">Site name</label>
+                  <input id="mSite" maxlength="60" placeholder="e.g. Gate A, River Bank">
+                </div>
+                <div class="field">
+                  <label for="mMode">Coverage</label>
+                  <select id="mMode">
+                    <option value="none">Not surveyed — pin only</option>
+                    <option value="fixed">Points one way</option>
+                    <option value="360">360° — sees all round</option>
+                  </select>
+                </div>
+                <div class="field aimrow off">
+                  <label for="mBearing">Faces <span id="mBearingOut"></span></label>
+                  <input id="mBearing" type="range" min="0" max="359" value="0">
+                </div>
+                <div class="field aimrow off">
+                  <label for="mFov">Field of view <span id="mFovOut"></span></label>
+                  <input id="mFov" type="range" min="10" max="355" value="70">
+                </div>
+                <div class="field">
+                  <label for="mHeight">Mounted height (m)</label>
+                  <input id="mHeight" type="number" min="0" max="500" step="0.1"
+                         placeholder="optional">
+                </div>
+                <div class="btnrow">
+                  <button class="btn" id="mSave" disabled>Save position</button>
+                  <button class="btn ghost" id="mRevert" disabled>Discard</button>
+                  <button class="btn danger" id="mRemove" disabled>Remove from map</button>
+                </div>
+                <div class="note" id="mNote"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="view" id="view-fleetPage"><div class="solo" id="page-fleet"></div></div>
+
+      <!-- ----------------------------------------------------- zone editor -->
+      <div class="view" id="view-zonesPage">
+        <section class="panel">
+          <header><h3>Virtual fences</h3><div class="spacer"></div>
+            <select id="zCamera" style="background:var(--panel-2);color:var(--ink);
+              border:1px solid var(--line);border-radius:6px;padding:5px 9px;
+              font-size:12px;font-family:inherit"></select></header>
+          <div class="pad">
+            <p class="hint">Click on the picture to drop the corners of a fence, then
+              name it and save. Coordinates are stored as fractions of the frame, so a
+              fence keeps working if the camera resolution changes.
+              <b>A saved fence applies immediately — no restart.</b></p>
+
+            <div class="zed" style="margin-top:13px">
+              <div>
+                <div class="canvas" id="zCanvas">
+                  <div class="waiting" id="zWaiting">select a camera…</div>
+                </div>
+                <div class="btnrow">
+                  <button class="btn ghost" id="zUndo">Undo point</button>
+                  <button class="btn ghost" id="zClear">Clear</button>
+                  <button class="btn ghost" id="zRefresh">Refresh picture</button>
+                </div>
+              </div>
+
+              <div>
+                <div class="field">
+                  <label for="zName">Fence name</label>
+                  <input id="zName" placeholder="RESTRICTED" maxlength="40">
+                </div>
+                <div class="field">
+                  <label for="zKind">Kind</label>
+                  <select id="zKind">
+                    <option value="RESTRICTED">RESTRICTED — raises alerts</option>
+                    <option value="WATCH">WATCH — observed only</option>
+                    <option value="PATROL">PATROL — observed only</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="zRisk">Base risk (0–100)</label>
+                  <input id="zRisk" type="number" min="0" max="100" value="60">
+                </div>
+                <div class="field">
+                  <label for="zObjects">Applies to</label>
+                  <select id="zObjects">
+                    <option value="PERSON,VEHICLE">People and vehicles</option>
+                    <option value="PERSON">People only</option>
+                    <option value="VEHICLE">Vehicles only</option>
+                  </select>
+                </div>
+                <button class="btn" id="zAdd" disabled>Add fence</button>
+
+                <div class="zlist" id="zList"></div>
+                <div class="btnrow">
+                  <button class="btn" id="zSave" disabled>Save to camera</button>
+                  <button class="btn ghost" id="zReload">Discard changes</button>
+                </div>
+                <div class="note" id="zNote"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- ---- panels live here and are moved into whichever view shows them -->
+      <div id="panelHome" style="display:none">
+        <section class="panel" id="cams">
+          <header><h3>Live surveillance</h3><div class="spacer"></div>
+            <span class="tag" id="camTag">&nbsp;</span>
+            <button class="btn sm addcam-open" hidden>+ Add camera</button></header>
+          <div class="cams" id="camGrid"><div class="empty">waiting for the fleet…</div></div>
+        </section>
+
+        <section class="panel" id="alerts">
+          <header><h3 id="listTitle">Recent alerts</h3><div class="spacer"></div>
+            <button class="tab on" id="tabAlerts">Alerts</button>
+            <button class="tab" id="tabIncidents">Incidents</button></header>
+          <div class="alerts" id="alertList"><div class="empty">no alerts yet</div></div>
+        </section>
+
+        <section class="panel" id="beh">
+          <header><h3>Behaviour intelligence</h3></header>
+          <div class="beh" id="behList"><div class="empty">nothing observed yet</div></div>
+        </section>
+
+        <section class="panel" id="map">
+          <header><h3>Map &amp; geofence</h3><div class="spacer"></div>
+            <span class="tag" id="mapTag">&nbsp;</span></header>
+          <div class="mapwrap">
+            <div id="mapWrap"></div>
+            <div class="legend">
+              <span><svg viewBox="-11 -30 22 31" aria-hidden="true"><path d="M0,0 C-2.5,-6 -10,-11 -10,-19 A10,10 0 1 1 10,-19 C10,-11 2.5,-6 0,0 Z" fill="#22c55e"/></svg>Camera</span>
+              <span><svg viewBox="-11 -30 22 31" aria-hidden="true"><path d="M0,0 C-2.5,-6 -10,-11 -10,-19 A10,10 0 1 1 10,-19 C10,-11 2.5,-6 0,0 Z" fill="#ef4444"/></svg>Alert · last 10 min</span>
+              <span><svg viewBox="-11 -30 22 31" aria-hidden="true"><path d="M0,0 C-2.5,-6 -10,-11 -10,-19 A10,10 0 1 1 10,-19 C10,-11 2.5,-6 0,0 Z" fill="#64748b"/></svg>Offline</span>
+              <span><i style="background:#ef44442e;border:1.5px solid #ef4444"></i>Geofence</span>
+              <span><i style="background:#22d3ee2e;border:1.5px solid #22d3ee"></i>Coverage</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="fleet">
+          <header><h3>Camera fleet</h3><div class="spacer"></div>
+            <button class="btn sm addcam-open" hidden>+ Add camera</button></header>
+          <div id="fleetWrap"><div class="empty">waiting…</div></div>
+          <div class="note" id="fleetNote" style="margin:0 14px 12px"></div>
+        </section>
+      </div>
+    </div>
+
+    <div class="feed">
+      <span class="lbl"><span class="dot live"></span>LIVE FEED</span>
+      <div class="items" id="feedItems"><span>waiting for events…</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ---------------------------------------------------------- add camera -->
+<div class="scrim" id="addScrim">
+  <div class="modal addcam" role="dialog" aria-labelledby="acTitle">
+    <header>
+      <h3 id="acTitle">Add camera</h3>
+      <button class="x" id="acClose" aria-label="Close">&times;</button>
+    </header>
+    <div class="pad" id="acForm">
+      <div class="kinds" id="acKinds">
+        <button class="kind on" data-kind="webcam"><b>Webcam</b><span>USB or built-in</span></button>
+        <button class="kind" data-kind="ip"><b>IP camera</b><span>Wi-Fi or LAN cable</span></button>
+        <button class="kind" data-kind="dvr"><b>CCTV via DVR</b><span>wired cameras on a DVR / NVR</span></button>
+        <button class="kind" data-kind="url"><b>Stream link</b><span>phone app or any URL</span></button>
+        <button class="kind" data-kind="demo"><b>Demo feed</b><span>no camera needed</span></button>
+      </div>
+
+      <div class="ackind" data-for="webcam">
+        <div class="field">
+          <label for="acIndex">Webcam number</label>
+          <div class="inline">
+            <select id="acIndex">
+              <option value="0">0 — usually the built-in camera</option>
+              <option value="1">1 — usually the first USB camera</option>
+              <option value="2">2</option><option value="3">3</option><option value="4">4</option>
+              <option value="5">5</option><option value="6">6</option><option value="7">7</option>
+              <option value="8">8</option><option value="9">9</option>
+            </select>
+            <button class="btn ghost" id="acFind">Find webcams</button>
+          </div>
+        </div>
+        <div class="found" id="acFound"></div>
+        <p class="hint">Finding webcams switches each one on for a moment to see if it answers.</p>
+      </div>
+
+      <div class="ackind" data-for="ip dvr">
+        <div class="field">
+          <label for="acBrand">Brand</label>
+          <select id="acBrand">
+            <option value="hikvision">Hikvision / Prama</option>
+            <option value="dahua">CP Plus / Dahua</option>
+            <option value="uniview">Uniview</option>
+            <option value="tapo">TP-Link Tapo</option>
+            <option value="custom">Other brand — type the stream path</option>
+          </select>
+        </div>
+        <div class="pair">
+          <div class="field">
+            <label for="acHost" id="acHostLabel">Camera IP address</label>
+            <input id="acHost" placeholder="192.168.1.64" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="acPort">RTSP port</label>
+            <input id="acPort" type="number" min="1" max="65535" value="554">
+          </div>
+        </div>
+        <div class="pair">
+          <div class="field">
+            <label for="acUser">Username</label>
+            <input id="acUser" placeholder="admin" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="acPass">Password</label>
+            <input id="acPass" type="password" autocomplete="new-password">
+          </div>
+        </div>
+        <div class="pair">
+          <div class="field" id="acChanField">
+            <label for="acChan">Channel (camera number on the DVR)</label>
+            <input id="acChan" type="number" min="1" max="64" value="1">
+          </div>
+          <div class="field" id="acStreamField">
+            <label for="acStream">Stream</label>
+            <select id="acStream">
+              <option value="sub">Sub stream — lighter, more cameras per PC</option>
+              <option value="main">Main stream — sharper, reads plates better</option>
+            </select>
+          </div>
+        </div>
+        <div class="field" id="acPathField">
+          <label for="acPath">Stream path</label>
+          <input id="acPath" placeholder="/stream1 — see the camera's manual" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="ackind" data-for="url">
+        <div class="field">
+          <label for="acUrl">Stream link</label>
+          <input id="acUrl" placeholder="http://192.168.1.20:8080/video" autocomplete="off">
+        </div>
+        <p class="hint">Phone with the <b>IP Webcam</b> app: <code>http://PHONE-IP:8080/video</code>.
+          Any <code>rtsp://</code>, <code>http://</code> or <code>https://</code> camera link works.</p>
+      </div>
+
+      <div class="ackind" data-for="demo">
+        <p class="hint">A moving test scene made on the server — for showing the system without a
+          camera. It is labelled <b>Demo feed</b> everywhere, so nobody mistakes it for a real one.</p>
+      </div>
+
+      <div class="field">
+        <label for="acId">Camera name</label>
+        <input id="acId" maxlength="32" placeholder="CAM-03" autocomplete="off">
+      </div>
+      <div class="acsource"><span>Connects to</span><code id="acSource">—</code></div>
+
+      <div class="acpreview" id="acPreview" hidden></div>
+      <div class="btnrow">
+        <button class="btn ghost" id="acTest">Test connection</button>
+        <button class="btn" id="acAdd">Add camera</button>
+      </div>
+      <div class="note" id="acNote"></div>
+      <p class="hint" id="acCreds" hidden style="margin-top:10px">The login is saved in the
+        fleet file (<code>config/cameras.json</code>) because the camera needs it to stream.
+        Do not upload that file anywhere public with a real password in it.</p>
+    </div>
+
+    <div class="pad acdone" id="acDone" hidden>
+      <div class="note on" id="acDoneNote"></div>
+      <div class="btnrow">
+        <button class="btn" id="acPlace">Place it on the map</button>
+        <button class="btn ghost" id="acAnother">Add another camera</button>
+        <button class="btn ghost" id="acFinish">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="scrim">
+  <div class="modal">
+    <header>
+      <h3 id="mTitle">Alert</h3>
+      <button class="x" id="mClose" aria-label="Close">&times;</button>
+    </header>
+    <div class="pad" id="mBody"></div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const clock = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return isNaN(d) ? String(iso).slice(11, 19) : d.toLocaleTimeString();
+};
+// The event store keeps every run, so the newest event on screen may be from
+// this morning. On a wall display that reads as "happening now", which is the
+// one thing a security dashboard must never get wrong.
+const ago = (iso) => {
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  const secs = Math.max(0, (Date.now() - d.getTime()) / 1000);
+  if (secs < 45) return "just now";
+  if (secs < 3600) return Math.round(secs / 60) + "m ago";
+  if (secs < 86400) return Math.round(secs / 3600) + "h ago";
+  return Math.round(secs / 86400) + "d ago";
+};
+
+let events = [];
+let byId = {};
+
+async function get(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(path + " -> " + r.status);
+  return r.json();
+}
+
+/* ------------------------------------------------------------------ cards */
+function paintStats(status, summary, incidents) {
+  const sev = (summary && summary.by_severity) || {};
+  $("sCrit").textContent = sev.CRITICAL || 0;
+  $("sTotal").textContent = (summary && summary.total) || 0;
+  $("sLatest").textContent = summary && summary.latest
+    ? "latest " + clock(summary.latest) : "none yet";
+
+  const cams = (status && status.cameras) || [];
+  const live = cams.filter(c => c.running).length;
+  const skipped = (status && status.skipped) || [];
+  $("sCams").textContent = live + " / " + (cams.length + skipped.length);
+  $("sSkipped").textContent = skipped.length
+    ? skipped.length + " not answering" : "all reachable";
+
+  const fps = cams.reduce((a, c) => a + (c.fps || 0), 0);
+  $("sFps").textContent = fps.toFixed(1);
+  $("sInc").textContent = (incidents && incidents.count) || 0;
+}
+
+/* ---------------------------------------------------------------- cameras */
+let camsBuilt = "";
+function paintCameras(status, siteMap) {
+  const cams = (status && status.cameras) || [];
+  const skipped = (status && status.skipped) || [];
+  const sites = {};
+  ((siteMap && siteMap.cameras) || []).forEach(c => { sites[c.camera_id] = c.site; });
+
+  const key = cams.map(c => c.camera_id + ":" + c.running + ":" + (c.error || "")).join("|")
+            + "#" + skipped.map(s => s.camera_id).join("|");
+  $("camTag").textContent = cams.length
+    ? cams.length + (cams.length === 1 ? " camera" : " cameras") : "";
+  if (key === camsBuilt) return;      // never rebuild a live <img>: it restarts the stream
+  camsBuilt = key;
+
+  const cells = cams.map(c => `
+    <div class="cam">
+      <div class="bar"><b>${esc(c.camera_id)}</b>
+        <span class="site">${esc(sites[c.camera_id] || "")}</span>
+        <span class="spacer"></span>
+        <span class="dot ${c.running ? "live" : "dead"}"></span>
+        <span class="st" style="color:${c.running ? "var(--ok)" : "var(--ink-3)"}">
+          ${c.running ? "LIVE" : "STOPPED"}</span>
+      </div>
+      ${c.running
+        ? `<img class="shot" alt="${esc(c.camera_id)} annotated view"
+               data-live="${esc(c.camera_id)}">`
+        : `<div class="none">${esc(c.error || "stopped")}</div>`}
+    </div>`);
+
+  const dead = skipped.map(s => `
+    <div class="cam">
+      <div class="bar"><b>${esc(s.camera_id)}</b><span class="spacer"></span>
+        <span class="dot dead"></span><span class="st" style="color:var(--critical)">OFFLINE</span>
+      </div>
+      <div class="none">${esc(s.reason || "not answering")}</div>
+    </div>`);
+
+  const html = cells.concat(dead).join("");
+  $("camGrid").innerHTML = html || '<div class="empty">no cameras configured</div>';
+  syncStreams();
+}
+
+/* ---------------------------------------------------------- stream budget */
+// An open MJPEG stream holds one browser connection for as long as it runs,
+// and a browser allows only six to one server. Streaming every camera would
+// leave nothing for the alert polling, the map or the zone editor: they would
+// wait forever, with no error anywhere to say why. So only LIVE_STREAMS tiles
+// stream; the rest show the same annotated frame as a still refreshed every
+// second; and nothing streams while the wall is off screen or the tab hidden.
+const LIVE_STREAMS = 2;
+
+function wallOnScreen() {
+  const wall = $("cams");
+  return !document.hidden && !!wall && wall.offsetParent !== null;
+}
+
+function tileMode(img, mode) {
+  clearTimeout(img._still);
+  img.dataset.mode = mode;
+}
+
+function refreshStill(img) {
+  if (img.dataset.mode !== "still" || !img.isConnected) return;
+  img.onload = img.onerror = () => {
+    img._still = setTimeout(() => refreshStill(img), 1000);
+  };
+  img.src = "/api/cameras/" + encodeURIComponent(img.dataset.live) + "/snapshot?t=" + Date.now();
+}
+
+function syncStreams() {
+  const show = wallOnScreen();
+  document.querySelectorAll("img[data-live]").forEach((img, i) => {
+    if (!show) {
+      if (img.dataset.mode) {
+        tileMode(img, "");
+        img.onload = img.onerror = null;
+        img.src = "";                     // this is what actually closes the stream
+      }
+      return;
+    }
+    if (i < LIVE_STREAMS) {
+      if (img.dataset.mode !== "stream") {
+        tileMode(img, "stream");
+        img.onload = img.onerror = null;
+        img.src = "/api/cameras/" + encodeURIComponent(img.dataset.live) + "/stream";
+      }
+    } else if (img.dataset.mode !== "still") {
+      tileMode(img, "still");
+      refreshStill(img);
+    }
+  });
+}
+
+document.addEventListener("visibilitychange", syncStreams);
+
+/* ----------------------------------------------------------------- alerts */
+function alertRow(e) {
+  const sev = (e.risk && e.risk.severity) || "LOW";
+  const label = (e.object && e.object.label) || "OBJECT";
+  const zone = e.zone ? e.zone.name : "open ground";
+  const beh = (e.behaviours || []).map(b => b.name).join(", ");
+  return `
+    <div class="alert ${sev}" data-id="${esc(e.event_id)}">
+      <div class="r1">
+        <span class="ttl">${esc(label)} in ${esc(zone)}</span>
+        <span class="t">${clock(e.timestamp)} · ${ago(e.timestamp)}</span>
+      </div>
+      <div class="r2">
+        <span class="meta">${esc(e.camera_id)}${beh ? " · " + esc(beh) : ""}</span>
+        <span class="badge ${sev}">${esc(sev)} ${e.risk ? e.risk.score : ""}</span>
+      </div>
+    </div>`;
+}
+
+function paintAlerts() {
+  $("alertList").innerHTML = events.length
+    ? events.slice(0, 40).map(alertRow).join("")
+    : '<div class="empty">no alerts yet</div>';
+}
+
+function paintFeed() {
+  $("feedItems").innerHTML = events.length
+    ? events.slice(0, 6).map(e => {
+        const label = (e.object && e.object.label) || "object";
+        const zone = e.zone ? e.zone.name : "open ground";
+        return `<span>${clock(e.timestamp)} &nbsp;<b>${esc(label)}</b> in
+                ${esc(zone)} at ${esc(e.camera_id)}</span>`;
+      }).join("")
+    : "<span>waiting for events…</span>";
+}
+
+/* ------------------------------------------------------------- behaviours */
+function paintBehaviours(counts) {
+  const rows = Object.entries(counts || {}).sort((a, b) => b[1] - a[1]);
+  if (!rows.length) {
+    $("behList").innerHTML = '<div class="empty">nothing observed yet</div>';
+    return;
+  }
+  const top = rows[0][1] || 1;
+  $("behList").innerHTML = rows.slice(0, 9).map(([name, n]) => `
+    <div class="row">
+      <span class="nm">${esc(name)}</span>
+      <span class="track"><span class="fill" style="width:${Math.round(100 * n / top)}%"></span></span>
+      <span class="ct">${n}</span>
+    </div>`).join("");
+}
+
+/* -------------------------------------------------------------------- map */
+// Web Mercator - the projection every web map uses - so imagery tiles and the
+// cameras drawn on top of them line up at every zoom, from all of India down
+// to a single gate. Tiles are plain <image> elements: no map library, nothing
+// loaded from a CDN.
+const TILE = 256;
+const MAX_LAT = 85.0511;
+const INDIA = [[6.5, 68.1], [37.1, 97.4]];
+const R_EARTH = 6371008.8;
+const STEPS = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000,
+               100000, 200000, 500000, 1000000];
+const rad = (d) => d * Math.PI / 180;
+const deg = (r) => r * 180 / Math.PI;
+const HALO = 'paint-order="stroke" stroke="#05080c" stroke-width="3" stroke-linejoin="round"';
+
+function worldPx(lat, lon, zoom) {
+  const size = TILE * Math.pow(2, zoom);
+  const s = Math.sin(rad(Math.max(-MAX_LAT, Math.min(MAX_LAT, lat))));
+  return [(lon + 180) / 360 * size, (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * size];
+}
+
+function worldLatLon(x, y, zoom) {
+  const size = TILE * Math.pow(2, zoom);
+  return [deg(Math.atan(Math.sinh(Math.PI * (1 - 2 * y / size)))), x / size * 360 - 180];
+}
+
+function metresPerPx(lat, zoom) {
+  return 156543.03392 * Math.cos(rad(lat)) / Math.pow(2, zoom);
+}
+
+function toScreen(view, lat, lon) {
+  const [cx, cy] = worldPx(view.lat, view.lon, view.zoom);
+  const [x, y] = worldPx(lat, lon, view.zoom);
+  return [view.w / 2 + x - cx, view.h / 2 + y - cy];
+}
+
+function fromScreen(view, px, py) {
+  const [cx, cy] = worldPx(view.lat, view.lon, view.zoom);
+  return worldLatLon(cx + px - view.w / 2, cy + py - view.h / 2, view.zoom);
+}
+
+// Frame a set of points; with none, frame India.
+function fitView(points, w, h, maxZoom) {
+  const pts = points.length ? points : INDIA;
+  const lats = pts.map(p => p[0]), lons = pts.map(p => p[1]);
+  const [x0, y1] = worldPx(Math.min(...lats), Math.min(...lons), 0);
+  const [x1, y0] = worldPx(Math.max(...lats), Math.max(...lons), 0);
+  const fit = Math.log2(Math.min(w * 0.72 / Math.max(x1 - x0, 1e-9),
+                                 h * 0.72 / Math.max(y1 - y0, 1e-9)));
+  const [lat, lon] = worldLatLon((x0 + x1) / 2, (y0 + y1) / 2, 0);
+  return {lat, lon, w, h, zoom: Math.max(3, Math.min(maxZoom || 18, 17, fit))};
+}
+
+function sitePoints(m) {
+  const pts = [];
+  ((m && m.cameras) || []).forEach(c => pts.push([c.lat, c.lon]));
+  ((m && m.geofences) || []).forEach(f => (f.polygon || []).forEach(p => pts.push(p)));
+  return pts;
+}
+
+// The tiles covering a view, taken from the nearest whole zoom and scaled.
+function tilesFor(view, basemap) {
+  if (!basemap) return [];
+  const tz = Math.max(0, Math.min(basemap.max_zoom || 19, Math.round(view.zoom)));
+  const scale = Math.pow(2, view.zoom - tz), n = Math.pow(2, tz);
+  const [cx, cy] = worldPx(view.lat, view.lon, tz);
+  const left = cx - view.w / 2 / scale, top = cy - view.h / 2 / scale;
+  const out = [];
+  for (let ty = Math.floor(top / TILE); ty * TILE < top + view.h / scale; ty++) {
+    if (ty < 0 || ty >= n) continue;
+    for (let tx = Math.floor(left / TILE); tx * TILE < left + view.w / scale; tx++) {
+      const wrapped = ((tx % n) + n) % n;
+      out.push({
+        key: tz + "/" + tx + "/" + ty,
+        url: basemap.url.replace("{z}", tz).replace("{x}", wrapped).replace("{y}", ty),
+        x: (tx * TILE - left) * scale, y: (ty * TILE - top) * scale, size: TILE * scale,
+      });
+    }
+  }
+  return out;
+}
+
+// Tiles are kept and moved rather than redrawn, so dragging does not flash
+// every image back to black on each mouse move.
+function syncTiles(layer, view, basemap) {
+  const keep = new Set();
+  const have = new Map([...layer.children].map(el => [el.getAttribute("data-key"), el]));
+  tilesFor(view, basemap).forEach(tile => {
+    let img = have.get(tile.key);
+    if (!img) {
+      img = document.createElementNS("http://www.w3.org/2000/svg", "image");
+      img.setAttribute("data-key", tile.key);
+      img.setAttribute("preserveAspectRatio", "none");
+      img.addEventListener("load", tileLoaded);
+      img.addEventListener("error", tileFailed);
+      img.setAttribute("href", tile.url);
+      layer.appendChild(img);
+    }
+    const size = (tile.size + 0.6).toFixed(1);
+    img.setAttribute("x", tile.x.toFixed(1));
+    img.setAttribute("y", tile.y.toFixed(1));
+    img.setAttribute("width", size);
+    img.setAttribute("height", size);
+    keep.add(tile.key);
+  });
+  have.forEach((el, key) => { if (!keep.has(key)) el.remove(); });
+}
+
+function chosenBasemap(m) {
+  const maps = (m && m.basemaps) || [];
+  let name = null;
+  try { name = localStorage.getItem("sentinelx.basemap"); } catch (err) { /* private window */ }
+  if (name === "grid") return null;
+  return maps.find(b => b.name === name) || maps[0] || null;
+}
+
+function setBasemap(name) {
+  try { localStorage.setItem("sentinelx.basemap", name); } catch (err) { /* ignore */ }
+  window.__tilesOffline = false;                  // a new choice deserves a new try
+  tilesOk = 0;
+  tilesBad = 0;
+  SxMap.all.forEach(map => {
+    map.tiles.innerHTML = "";
+    if (map.view) map.view.zoom = map.clamp(map.view.zoom);
+    map.paint();
+  });
+}
+
+// One bad tile is a hole in coverage. Several, and not one good, is a network
+// with no internet - fall back to the grid and say so, rather than show a map
+// full of broken squares.
+let tilesOk = 0, tilesBad = 0;
+function tileLoaded() { tilesOk++; }
+function tileFailed() {
+  tilesBad++;
+  if (tilesOk || tilesBad < 4 || window.__tilesOffline) return;
+  window.__tilesOffline = true;
+  SxMap.repaintAll();
+}
+
+// ------------------------------------------------------------- drawing kit
+
+function offsetPoint(lat, lon, bearing, metres) {
+  const d = metres / R_EARTH, b = rad(bearing), p1 = rad(lat), l1 = rad(lon);
+  const p2 = Math.asin(Math.sin(p1) * Math.cos(d) + Math.cos(p1) * Math.sin(d) * Math.cos(b));
+  const l2 = l1 + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(p1),
+                             Math.cos(d) - Math.sin(p1) * Math.sin(p2));
+  return [deg(p2), (deg(l2) + 540) % 360 - 180];
+}
+
+// A 360-degree camera has a field of view but no one direction.
+function camMode(c) {
+  if (c.fov != null && c.fov >= 360) return "360";
+  return c.bearing != null && c.fov != null ? "fixed" : "none";
+}
+
+function coverageSvg(view, lat, lon, mode, bearing, fov, reach) {
+  const pts = [];
+  if (mode === "360") {
+    for (let i = 0; i <= 36; i++) pts.push(offsetPoint(lat, lon, i * 10, reach));
+  } else {
+    pts.push([lat, lon]);
+    for (let i = 0; i <= 16; i++) pts.push(offsetPoint(lat, lon, bearing - fov / 2 + fov * i / 16, reach));
+    pts.push([lat, lon]);
+  }
+  return pts.map(p => toScreen(view, p[0], p[1]).map(v => v.toFixed(1)).join(",")).join(" ");
+}
+
+const PIN_PATH = "M0,0 C-2.5,-6 -10,-11 -10,-19 A10,10 0 1 1 10,-19 C10,-11 2.5,-6 0,0 Z";
+const PIN_COLOUR = {camera: "#22c55e", alert: "#ef4444", offline: "#64748b", selected: "#22d3ee"};
+
+// A map pin with its tip on the camera, and a glyph saying what it is doing.
+function pinSvg(x, y, state, title, scale) {
+  const fill = PIN_COLOUR[state] || PIN_COLOUR.camera;
+  const camera = '<rect x="-5.6" y="-22.2" width="7.6" height="6.4" rx="1.3" fill="#fff"/>' +
+                 '<path d="M2.4,-20.6 L6,-22.6 L6,-15.4 L2.4,-17.4 Z" fill="#fff"/>';
+  let glyph = camera;
+  if (state === "alert")
+    glyph = '<path d="M0,-25.5 L6.2,-14.4 L-6.2,-14.4 Z" fill="#fff"/>' +
+            `<rect x="-0.85" y="-22.6" width="1.7" height="4.4" fill="${fill}"/>` +
+            `<rect x="-0.85" y="-17" width="1.7" height="1.7" fill="${fill}"/>`;
+  if (state === "offline")
+    glyph = camera + `<line x1="-6.5" y1="-14" x2="6.5" y2="-24.5" stroke="${fill}" stroke-width="3"/>` +
+            '<line x1="-6.5" y1="-14" x2="6.5" y2="-24.5" stroke="#fff" stroke-width="1.2"/>';
+  return `<g transform="translate(${x.toFixed(1)},${y.toFixed(1)}) scale(${scale || 1})">
+      <title>${esc(title)}</title>
+      <ellipse cx="0" cy="0.6" rx="4.2" ry="1.7" fill="#000" opacity=".5"/>
+      <path d="${PIN_PATH}" fill="${fill}" stroke="#05080c" stroke-width="1.4"/>${glyph}</g>`;
+}
+
+// What each camera is doing, from the fleet status and the alerts on screen.
+function cameraStates() {
+  const status = window.__status || {};
+  const offline = new Set((status.skipped || []).map(s => s.camera_id));
+  (status.cameras || []).forEach(c => { if (!c.running) offline.add(c.camera_id); });
+  const alerting = new Set();
+  const now = Date.now();
+  (events || []).forEach(e => {
+    const at = new Date(e.timestamp).getTime();
+    if (isFinite(at) && now - at < 10 * 60 * 1000) alerting.add(e.camera_id);
+  });
+  return (id) => offline.has(id) ? "offline" : (alerting.has(id) ? "alert" : "camera");
+}
+
+function fenceSvg(view, fence, fontSize) {
+  const corners = (fence.polygon || []).map(p => toScreen(view, p[0], p[1]));
+  if (!corners.length) return "";
+  const pts = corners.map(c => c.map(v => v.toFixed(1)).join(",")).join(" ");
+  // Name inside the top-left of the area, clear of the scale bar at the bottom.
+  const x = Math.min(...corners.map(c => c[0])), y = Math.min(...corners.map(c => c[1]));
+  return `<polygon points="${pts}" fill="#ef44442e" stroke="#ef4444" stroke-width="2"
+            stroke-linejoin="round"/>
+    <text x="${(x + 7).toFixed(1)}" y="${(y + fontSize + 6).toFixed(1)}" fill="#fecaca"
+          font-size="${fontSize}" font-weight="600" letter-spacing="0.08em" ${HALO}>${esc(fence.name)}</text>`;
+}
+
+function metresLabel(m) {
+  return m >= 1000 ? (m / 1000).toFixed(m % 1000 ? 1 : 0) + " km" : Math.round(m) + " m";
+}
+
+function gridSvg(map) {
+  const mpp = metresPerPx(map.view.lat, map.view.zoom);
+  const px = (STEPS.find(s => mpp * map.w / s <= 9) || 2000000) / mpp;
+  let svg = "";
+  for (let x = map.w / 2 % px; x < map.w; x += px)
+    svg += `<line x1="${x.toFixed(1)}" y1="0" x2="${x.toFixed(1)}" y2="${map.h}" stroke="#15202d"/>`;
+  for (let y = map.h / 2 % px; y < map.h; y += px)
+    svg += `<line x1="0" y1="${y.toFixed(1)}" x2="${map.w}" y2="${y.toFixed(1)}" stroke="#15202d"/>`;
+  return svg;
+}
+
+// North arrow, scale bar and the imagery credit.
+function mapChrome(map) {
+  const {w, h, view} = map;
+  const small = w < 600;
+  const mpp = metresPerPx(view.lat, view.zoom);
+  const step = STEPS.find(s => mpp * w / s <= (small ? 8 : 9)) || 2000000;
+  const px = step / mpp;
+  const base = map.base();
+  let svg = `<g transform="translate(${w - (small ? 20 : 30)},${small ? 22 : 30})">
+      <circle r="${small ? 12 : 16}" fill="#05080cb8" stroke="#2a3749"/>
+      <path d="${small ? "M0,-8 L4,3 L0,0.6 L-4,3 Z" : "M0,-11 L5.5,4.5 L0,1 L-5.5,4.5 Z"}" fill="#e8eef5"/>
+      <text y="${small ? 9 : 12.5}" fill="#e8eef5" font-size="${small ? 6 : 7.5}" text-anchor="middle">N</text></g>
+    <g transform="translate(${small ? 12 : 18},${h - (small ? 13 : 22)})">
+      <rect x="-6" y="${small ? -11 : -16}" width="${(px + (small ? 46 : 70)).toFixed(1)}"
+            height="${small ? 19 : 28}" rx="4" fill="#05080cc2"/>
+      <line x1="0" y1="0" x2="${px.toFixed(1)}" y2="0" stroke="#e8eef5" stroke-width="2"/>
+      <line x1="0" y1="-4" x2="0" y2="4" stroke="#e8eef5" stroke-width="2"/>
+      <line x1="${px.toFixed(1)}" y1="-4" x2="${px.toFixed(1)}" y2="4" stroke="#e8eef5" stroke-width="2"/>
+      <text x="${(px + 7).toFixed(1)}" y="${small ? 3 : 4}" fill="#e8eef5" font-size="${small ? 9 : 12}">${metresLabel(step)}</text></g>`;
+  if (base && base.attribution)
+    svg += `<text x="${w - 5}" y="${h - 5}" fill="#e2e8f0" font-size="${small ? 6 : 10}"
+             text-anchor="end" ${HALO}>${esc(base.attribution)}</text>`;
+  return svg;
+}
+
+// --------------------------------------------------------- the map widget
+
+const LAYERS_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+  'stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 8l10 5 10-5-10-5z"/>' +
+  '<path d="m2 13 10 5 10-5"/><path d="m2 17.5 10 5 10-5" opacity=".55"/></svg>';
+
+class SxMap {
+  constructor(box, {w, h, overlay, onClick, onMove}) {
+    this.box = box;
+    this.w = w;
+    this.h = h;
+    this.overlay = overlay;
+    this.onClick = onClick || null;
+    this.onMove = onMove || null;
+    this.site = null;
+    this.view = null;
+    this.drag = null;
+    this.panned = false;
+
+    box.classList.add("mapbox");
+    box.innerHTML =
+      `<svg viewBox="0 0 ${w} ${h}" role="img"><title>Map of camera positions</title>
+         <rect width="${w}" height="${h}" fill="#070d14"/>
+         <g class="maptiles"></g><g class="mapover"></g></svg>
+       <div class="mapctl">
+         <button type="button" data-act="in" title="Zoom in" aria-label="Zoom in">+</button>
+         <button type="button" data-act="out" title="Zoom out" aria-label="Zoom out">&minus;</button>
+         <button type="button" data-act="layers" title="Map layers" aria-label="Map layers">${LAYERS_ICON}</button>
+       </div>
+       <div class="layermenu" hidden></div>
+       <div class="mapnote" hidden>Map imagery could not load — probably no internet on
+         this network. Everything still works on the grid.</div>`;
+    this.svg = box.querySelector("svg");
+    this.tiles = box.querySelector(".maptiles");
+    this.over = box.querySelector(".mapover");
+    this.menu = box.querySelector(".layermenu");
+    this.note = box.querySelector(".mapnote");
+    this.listen();
+    SxMap.all.push(this);
+  }
+
+  base() { return window.__tilesOffline ? null : chosenBasemap(this.site); }
+
+  clamp(zoom) {
+    const base = this.base();
+    return Math.max(3, Math.min(base ? (base.max_zoom || 19) : 20, zoom));
+  }
+
+  point(ev) {
+    const box = this.svg.getBoundingClientRect();
+    return [(ev.clientX - box.left) / box.width * this.w, (ev.clientY - box.top) / box.height * this.h];
+  }
+
+  fit(points) {
+    const base = this.base();
+    this.view = fitView(points, this.w, this.h, base ? base.max_zoom : 18);
+  }
+
+  inView(lat, lon) {
+    if (!this.view) return false;
+    const [x, y] = toScreen(this.view, lat, lon);
+    return x > 20 && x < this.w - 20 && y > 20 && y < this.h - 20;
+  }
+
+  goTo(lat, lon, zoom) {
+    this.view.lat = lat;
+    this.view.lon = lon;
+    if (zoom != null) this.view.zoom = this.clamp(Math.max(this.view.zoom, zoom));
+  }
+
+  // Zoom keeping one spot on screen still - the cursor, or the middle.
+  zoomAt(delta, px, py) {
+    if (!this.view) return;
+    const [lat, lon] = fromScreen(this.view, px, py);
+    this.view.zoom = this.clamp(this.view.zoom + delta);
+    const [x, y] = toScreen(this.view, lat, lon);
+    const [cx, cy] = worldPx(this.view.lat, this.view.lon, this.view.zoom);
+    [this.view.lat, this.view.lon] = worldLatLon(cx + x - px, cy + y - py, this.view.zoom);
+    this.paint();
+  }
+
+  paint() {
+    if (!this.view) return;
+    syncTiles(this.tiles, this.view, this.base());
+    this.over.innerHTML = this.overlay(this);
+    this.note.hidden = !window.__tilesOffline;
+  }
+
+  toggleMenu() {
+    const current = chosenBasemap(this.site);
+    this.menu.innerHTML = ((this.site && this.site.basemaps) || []).map(b =>
+      `<button type="button" data-base="${esc(b.name)}" class="${current && current.name === b.name ? "on" : ""}">${esc(b.name)}</button>`
+    ).join("") + `<button type="button" data-base="grid" class="${current ? "" : "on"}">Grid only</button>`;
+    this.menu.hidden = !this.menu.hidden;
+  }
+
+  listen() {
+    const onControls = (ev) => ev.target.closest(".mapctl, .layermenu");
+
+    this.box.addEventListener("click", (ev) => {
+      const act = ev.target.closest("[data-act]");
+      if (act) {
+        if (act.dataset.act === "layers") this.toggleMenu();
+        else this.zoomAt(act.dataset.act === "in" ? 1 : -1, this.w / 2, this.h / 2);
+        return;
+      }
+      const choice = ev.target.closest("[data-base]");
+      if (choice) {
+        this.menu.hidden = true;
+        setBasemap(choice.dataset.base);
+        return;
+      }
+      if (onControls(ev)) return;
+      this.menu.hidden = true;
+      if (this.panned) { this.panned = false; return; }   // that was a drag, not a click
+      if (this.onClick && this.view) this.onClick(...fromScreen(this.view, ...this.point(ev)), ev);
+    });
+
+    this.box.addEventListener("mousedown", (ev) => {
+      if (!this.view || ev.button !== 0 || onControls(ev)) return;
+      this.drag = {x: ev.clientX, y: ev.clientY, zoom: this.view.zoom,
+                   world: worldPx(this.view.lat, this.view.lon, this.view.zoom), moved: false};
+    });
+
+    window.addEventListener("mousemove", (ev) => {
+      if (!this.drag || !this.view) return;
+      if (!this.drag.moved && Math.hypot(ev.clientX - this.drag.x, ev.clientY - this.drag.y) < 5) return;
+      if (!this.drag.moved) this.box.classList.add("dragging");
+      this.drag.moved = true;
+      if (this.drag.zoom !== this.view.zoom) {         // zoomed mid-drag: start again here
+        this.drag = {x: ev.clientX, y: ev.clientY, zoom: this.view.zoom,
+                     world: worldPx(this.view.lat, this.view.lon, this.view.zoom), moved: true};
+        return;
+      }
+      const box = this.svg.getBoundingClientRect();
+      const dx = (ev.clientX - this.drag.x) / box.width * this.w;
+      const dy = (ev.clientY - this.drag.y) / box.height * this.h;
+      [this.view.lat, this.view.lon] = worldLatLon(this.drag.world[0] - dx, this.drag.world[1] - dy,
+                                                   this.view.zoom);
+      this.paint();
+    });
+
+    window.addEventListener("mouseup", () => {
+      if (!this.drag) return;
+      this.panned = this.drag.moved;
+      this.drag = null;
+      this.box.classList.remove("dragging");
+    });
+
+    this.box.addEventListener("mousemove", (ev) => {
+      if (this.onMove && this.view && !onControls(ev))
+        this.onMove(...fromScreen(this.view, ...this.point(ev)));
+    });
+    this.box.addEventListener("mouseleave", () => { if (this.onMove) this.onMove(null, null); });
+
+    // The layer menu closes like any menu: a click elsewhere, or Escape.
+    document.addEventListener("click", (ev) => { if (!this.box.contains(ev.target)) this.menu.hidden = true; });
+    document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") this.menu.hidden = true; });
+
+    this.box.addEventListener("wheel", (ev) => {
+      if (!this.view) return;
+      ev.preventDefault();
+      this.zoomAt(ev.deltaY < 0 ? 0.5 : -0.5, ...this.point(ev));
+    }, {passive: false});
+  }
+}
+SxMap.all = [];
+SxMap.repaintAll = () => SxMap.all.forEach(map => map.paint());
+
+// ------------------------------------------------------- dashboard overview
+
+let overview = null;
+let overviewFrame = "";
+
+function paintMap(m) {
+  if (!overview) overview = new SxMap($("mapWrap"), {w: 420, h: 270, overlay: overviewOverlay});
+  overview.site = m;
+  // Re-frame only when cameras or areas move, so a live poll never throws
+  // away where somebody has panned to.
+  const frame = JSON.stringify(sitePoints(m));
+  if (frame !== overviewFrame || !overview.view) {
+    overviewFrame = frame;
+    overview.fit(sitePoints(m));
+  }
+  $("mapTag").textContent = (m && m.unplaced && m.unplaced.length)
+    ? m.unplaced.length + " not placed" : "";
+  overview.paint();
+}
+
+function overviewOverlay(map) {
+  const site = map.site || {}, view = map.view;
+  const stateOf = cameraStates();
+  const cams = site.cameras || [];
+  let svg = map.base() ? "" : gridSvg(map);
+  (site.geofences || []).forEach(f => { svg += fenceSvg(view, f, 9); });
+  const reach = Math.max(120, 16 * metresPerPx(view.lat, view.zoom));
+  cams.forEach(c => {
+    const mode = camMode(c);
+    if (mode !== "none")
+      svg += `<polygon points="${coverageSvg(view, c.lat, c.lon, mode, c.bearing, c.fov, reach)}"
+               fill="#22d3ee26" stroke="#22d3ee99" stroke-width="1"/>`;
+  });
+  cams.forEach(c => {
+    const [x, y] = toScreen(view, c.lat, c.lon);
+    const state = stateOf(c.camera_id);
+    svg += pinSvg(x, y, state, c.camera_id + (c.site ? " · " + c.site : "") + " · " + state, 0.9);
+  });
+  if (!cams.length)
+    svg += `<text x="${map.w / 2}" y="${map.h / 2 + 40}" fill="#e8eef5" font-size="11"
+             text-anchor="middle" ${HALO}>no cameras placed yet — place them on the Map &amp; geofence page</text>`;
+  return svg + mapChrome(map);
+}
+
+/* ------------------------------------------------------------------ fleet */
+function paintFleet(status) {
+  const cams = (status && status.cameras) || [];
+  const skipped = (status && status.skipped) || [];
+  const editable = !!(status && status.fleet_editable);
+  document.querySelectorAll(".addcam-open").forEach(b => { b.hidden = !editable; });
+  if (!cams.length && !skipped.length) {
+    $("fleetWrap").innerHTML = '<div class="empty">no cameras</div>';
+    return;
+  }
+  const name = (c) => `<td>${esc(c.camera_id)}<span class="srcl">${esc(c.label || "")}</span></td>`;
+  const remove = (c) => editable
+    ? `<td class="rm"><button data-remove="${esc(c.camera_id)}" title="Remove ${esc(c.camera_id)}"
+         aria-label="Remove ${esc(c.camera_id)}">&times;</button></td>` : "<td></td>";
+  const rows = cams.map(c => c.running || !c.error ? `
+    <tr>${name(c)}
+      <td class="num">${(c.fps || 0).toFixed(1)}</td>
+      <td class="num">${c.frames || 0}</td>
+      <td class="num">${c.alerts || 0}</td>${remove(c)}</tr>` : `
+    <tr>${name(c)}
+      <td colspan="3" style="color:var(--critical)">${esc(c.error)}</td>${remove(c)}</tr>`)
+    .concat(skipped.map(s => `
+    <tr>${name(s)}
+      <td colspan="3" style="color:var(--critical)">${esc(s.reason || "offline")}</td>${remove(s)}</tr>`));
+  $("fleetWrap").innerHTML =
+    `<table><thead><tr><th>Camera</th><th>FPS</th><th>Frames</th><th>Alerts</th><th></th></tr></thead>
+     <tbody>${rows.join("")}</tbody></table>`;
+}
+
+function fleetNote(text, bad) {
+  const note = $("fleetNote");
+  note.textContent = text;
+  note.className = "note on " + (bad ? "bad" : "ok");
+  if (!bad) setTimeout(() => note.classList.remove("on"), 6000);
+}
+
+async function send(method, path, body) {
+  const response = await fetch(path, {
+    method,
+    headers: body ? {"Content-Type": "application/json"} : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  let data = {};
+  try { data = await response.json(); } catch (err) { /* not JSON */ }
+  return {ok: response.ok, body: data};
+}
+
+// After the fleet changes, everything that lists cameras catches up at once
+// instead of on its next poll.
+async function fleetChanged() {
+  await poll();
+  try {
+    const m = await get("/api/map");
+    window.__siteMap = m;
+    paintMap(m);
+    paintCameras(window.__status, m);
+  } catch (err) { /* the next poll will do */ }
+}
+
+$("fleetWrap").addEventListener("click", async (ev) => {
+  const button = ev.target.closest("[data-remove]");
+  if (!button) return;
+  const id = button.dataset.remove;
+  if (!confirm("Remove " + id + " from the fleet?\n\nIt stops now and is deleted from the " +
+               "fleet file, map position included. Alerts it already raised are kept.")) return;
+  button.disabled = true;
+  try {
+    const r = await send("DELETE", "/api/cameras/" + encodeURIComponent(id));
+    if (!r.ok) { fleetNote("Not removed: " + (r.body.detail || "error"), true); button.disabled = false; return; }
+    if (mSel === id) { mSel = null; mDirty = false; }
+    await fleetChanged();
+    fleetNote(id + " removed from the fleet", false);
+  } catch (err) {
+    fleetNote("Could not reach the server - nothing was removed.", true);
+    button.disabled = false;
+  }
+});
+
+/* ------------------------------------------------------------ add camera */
+// A camera joins from here: a webcam, an IP camera, a wired CCTV camera on a
+// DVR, a phone app's stream, or the demo feed. The address is built from what
+// a person installing a camera actually knows - brand, IP, login, channel -
+// rather than an RTSP path nobody remembers.
+const BRAND_PATHS = {
+  hikvision: (ch, sub) => "/Streaming/Channels/" + (ch * 100 + (sub ? 2 : 1)),
+  dahua:     (ch, sub) => "/cam/realmonitor?channel=" + ch + "&subtype=" + (sub ? 1 : 0),
+  uniview:   (ch, sub) => "/unicast/c" + ch + "/s" + (sub ? 1 : 0) + "/live",
+  tapo:      (ch, sub) => "/stream" + (sub ? 2 : 1),
+};
+let acKind = "webcam";
+let acLastAdded = null;
+
+function acMask(source) {
+  return source.replace(/(\/\/[^/@:]*:)[^/@]*@/, "$1***@")
+               .replace(/([?&](?:password|pass|passwd|pwd|token|key|auth)=)[^&]*/gi, "$1***");
+}
+
+// The source the server will connect to. `reveal` false hides the password,
+// for showing on screen.
+function acSource(reveal) {
+  if (acKind === "demo") return "synthetic";
+  if (acKind === "webcam") return "webcam:" + $("acIndex").value;
+  if (acKind === "url") return $("acUrl").value.trim();
+  const host = $("acHost").value.trim().replace(/^rtsp:\/\//i, "").replace(/\/.*$/, "");
+  if (!host) return "";
+  const port = parseInt($("acPort").value, 10) || 554;
+  const user = $("acUser").value.trim(), pass = $("acPass").value;
+  const auth = user
+    ? encodeURIComponent(user) + (pass ? ":" + (reveal ? encodeURIComponent(pass) : "***") : "") + "@"
+    : "";
+  const brand = $("acBrand").value;
+  const channel = acKind === "dvr" ? Math.max(1, parseInt($("acChan").value, 10) || 1) : 1;
+  let path = brand === "custom"
+    ? $("acPath").value.trim()
+    : BRAND_PATHS[brand](channel, $("acStream").value === "sub");
+  if (path && !path.startsWith("/")) path = "/" + path;
+  return "rtsp://" + auth + host + ":" + port + path;
+}
+
+function acCameraIds() {
+  const status = window.__status || {};
+  return ((status.cameras || []).map(c => c.camera_id))
+    .concat((status.skipped || []).map(s => s.camera_id));
+}
+
+function acNextId() {
+  const taken = new Set(acCameraIds());
+  for (let n = 1; n < 1000; n++) {
+    const id = "CAM-" + String(n).padStart(2, "0");
+    if (!taken.has(id)) return id;
+  }
+  return "";
+}
+
+function acNote(text, bad) {
+  const note = $("acNote");
+  note.textContent = text;
+  note.className = "note on " + (bad ? "bad" : "ok");
+}
+
+function acPaint() {
+  document.querySelectorAll("#acKinds .kind").forEach(b =>
+    b.classList.toggle("on", b.dataset.kind === acKind));
+  document.querySelectorAll(".ackind").forEach(panel => {
+    panel.hidden = !panel.dataset.for.split(" ").includes(acKind);
+  });
+  const brand = $("acBrand").value, custom = brand === "custom";
+  $("acPathField").hidden = !custom;
+  $("acStreamField").hidden = custom;
+  $("acChanField").hidden = acKind !== "dvr" || custom || brand === "tapo";
+  $("acHostLabel").textContent = acKind === "dvr" ? "DVR / NVR IP address" : "Camera IP address";
+
+  const shown = acSource(false);
+  $("acSource").textContent = shown ? acMask(shown) : "—";
+  const login = (acKind === "ip" || acKind === "dvr") ? !!$("acPass").value
+    : acKind === "url" && acMask(shown) !== shown;
+  $("acCreds").hidden = !login;
+  const id = $("acId").value.trim();
+  $("acTest").disabled = !shown;
+  $("acAdd").disabled = !shown || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(id);
+}
+
+function acReset() {
+  $("acForm").hidden = false;
+  $("acDone").hidden = true;
+  $("acPreview").hidden = true;
+  $("acPreview").innerHTML = "";
+  $("acNote").className = "note";
+  $("acFound").innerHTML = "";
+  $("acPass").value = "";
+  $("acId").value = acNextId();
+  acPaint();
+}
+
+function openAddCamera() {
+  acReset();
+  $("addScrim").classList.add("on");
+  $("acId").focus();
+}
+
+function closeAddCamera() {
+  $("acPass").value = "";                 // a password does not linger in the page
+  $("addScrim").classList.remove("on");
+}
+
+document.querySelectorAll(".addcam-open").forEach(b => b.addEventListener("click", openAddCamera));
+$("acClose").addEventListener("click", closeAddCamera);
+$("acFinish").addEventListener("click", closeAddCamera);
+$("addScrim").addEventListener("click", (ev) => { if (ev.target === $("addScrim")) closeAddCamera(); });
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && $("addScrim").classList.contains("on")) closeAddCamera();
+});
+
+$("acKinds").addEventListener("click", (ev) => {
+  const kind = ev.target.closest("[data-kind]");
+  if (!kind) return;
+  acKind = kind.dataset.kind;
+  $("acPreview").hidden = true;
+  $("acNote").className = "note";
+  acPaint();
+});
+
+["acIndex", "acBrand", "acHost", "acPort", "acUser", "acPass", "acChan", "acStream",
+ "acPath", "acUrl", "acId"].forEach(id => {
+  $(id).addEventListener("input", acPaint);
+  $(id).addEventListener("change", acPaint);
+});
+
+$("acFind").addEventListener("click", async () => {
+  $("acFind").disabled = true;
+  $("acFind").textContent = "Looking…";
+  $("acFound").innerHTML = "";
+  try {
+    const r = await send("POST", "/api/cameras/webcams");
+    const cams = (r.body && r.body.webcams) || [];
+    $("acFound").innerHTML = cams.length ? cams.map(w => w.in_use_by
+      ? `<button class="tab" disabled>Webcam ${w.index} · in use by ${esc(w.in_use_by)}</button>`
+      : `<button class="tab" data-webcam="${w.index}">Webcam ${w.index} · ${w.width}×${w.height}</button>`
+    ).join("") : '<span class="hint">No webcam answered. Check the USB cable, or close other apps using the camera.</span>';
+  } catch (err) {
+    $("acFound").innerHTML = '<span class="hint">Could not reach the server.</span>';
+  } finally {
+    $("acFind").disabled = false;
+    $("acFind").textContent = "Find webcams";
+  }
+});
+
+$("acFound").addEventListener("click", (ev) => {
+  const pick = ev.target.closest("[data-webcam]");
+  if (!pick) return;
+  $("acIndex").value = pick.dataset.webcam;
+  document.querySelectorAll("#acFound .tab").forEach(b => b.classList.toggle("on", b === pick));
+  acPaint();
+});
+
+$("acTest").addEventListener("click", async () => {
+  const source = acSource(true);
+  if (!source) return;
+  $("acTest").disabled = true;
+  $("acTest").textContent = "Testing…";
+  $("acPreview").hidden = true;
+  acNote("Connecting… a network camera can take up to 15 seconds.", false);
+  try {
+    const r = await send("POST", "/api/cameras/test", {source});
+    if (r.ok && r.body.ok) {
+      $("acPreview").innerHTML = `<img alt="What the camera sees" src="${r.body.preview}">`;
+      $("acPreview").hidden = false;
+      acNote("Connected — " + r.body.width + "×" + r.body.height + ". If this is the right view, add it.", false);
+    } else {
+      acNote("Did not connect: " + (r.body.reason || r.body.detail || "unknown error"), true);
+    }
+  } catch (err) {
+    acNote("Could not reach the server.", true);
+  } finally {
+    $("acTest").textContent = "Test connection";
+    acPaint();
+  }
+});
+
+$("acAdd").addEventListener("click", async () => {
+  const source = acSource(true), camera_id = $("acId").value.trim();
+  $("acAdd").disabled = true;
+  $("acTest").disabled = true;
+  acNote("Adding " + camera_id + "…", false);
+  try {
+    const r = await send("POST", "/api/cameras", {camera_id, source});
+    if (!r.ok) {
+      acNote("Not added: " + (r.body.detail || "error"), true);
+      acPaint();
+      return;
+    }
+    $("acPass").value = "";
+    acLastAdded = camera_id;
+    await fleetChanged();
+    $("acDoneNote").className = "note on " + (r.body.running ? "ok" : "bad");
+    $("acDoneNote").textContent = r.body.running
+      ? camera_id + " added and running (" + r.body.label + "). It is on the Live surveillance wall now."
+      : camera_id + " is saved, but it is offline: " + (r.body.reason || "not answering") +
+        ". It stays in the fleet and is tried again on the next restart.";
+    $("acForm").hidden = true;
+    $("acDone").hidden = false;
+  } catch (err) {
+    acNote("Could not reach the server - nothing was added.", true);
+    acPaint();
+  }
+});
+
+$("acAnother").addEventListener("click", acReset);
+$("acPlace").addEventListener("click", () => {
+  closeAddCamera();
+  if (acLastAdded && !mDirty) mSel = acLastAdded;
+  showView("mapPage");
+});
+
+/* ------------------------------------------------------------------ modal */
+function showEvent(id) {
+  const e = byId[id];
+  if (!e) return;
+  const risk = e.risk || {};
+  const factors = (risk.factors || []).map(f => `
+    <div class="factor">
+      <span class="p ${f.points < 0 ? "down" : "up"}">${f.points > 0 ? "+" : ""}${f.points}</span>
+      <span class="d"><b>${esc(f.label)}</b>${esc(f.detail || "")}</span>
+    </div>`).join("");
+
+  $("mTitle").textContent = ((e.object && e.object.label) || "Object") + " · " +
+    (risk.severity || "") + " " + (risk.score != null ? risk.score + "/100" : "");
+
+  const beh = (e.behaviours || []).map(b => b.name).join(", ") || "—";
+  $("mBody").innerHTML = `
+    <dl class="kv">
+      <dt>Camera</dt><dd>${esc(e.camera_id)}</dd>
+      <dt>Time</dt><dd>${esc(String(e.timestamp || "").replace("T", " "))}</dd>
+      <dt>Zone</dt><dd>${esc(e.zone ? e.zone.name + " (" + e.zone.kind + ")" : "open ground")}</dd>
+      <dt>Track</dt><dd>${esc((e.object && e.object.track_label) || "—")}</dd>
+      <dt>Confidence</dt><dd>${e.object ? Math.round(e.object.confidence * 100) + "%" : "—"}</dd>
+      <dt>Behaviours</dt><dd>${esc(beh)}</dd>
+      ${e.plate ? `<dt>Plate</dt><dd>${esc(e.plate.display || e.plate.text)}</dd>` : ""}
+      ${e.registry ? `<dt>Registered</dt><dd>${esc(e.registry.detail || "")}</dd>` : ""}
+      <dt>Event ID</dt><dd>${esc(e.event_id)}</dd>
+    </dl>
+    ${risk.reason ? `<p class="why">${esc(risk.reason)}</p>` : ""}
+    ${evidenceLinks(e)}
+    <h4 class="sec">Contributing factors</h4>
+    <div class="factors">${factors || '<div class="factor"><span class="d">none recorded</span></div>'}</div>`;
+  $("scrim").classList.add("on");
+}
+
+function fileName(path) {
+  return path ? String(path).split(/[\/]/).pop() : "";
+}
+
+// Evidence is what turns an alert into something anybody can check afterwards.
+// The paths the event carries are filesystem paths on the box running this, so
+// they are served by name through /api/evidence rather than linked directly.
+function evidenceLinks(e) {
+  const items = [
+    ["Snapshot", e.evidence_path],
+    ["Clip", e.clip_path],
+    ["Plate crop", e.plate_path],
+  ].filter(([, path]) => path);
+  if (!items.length) return "";
+
+  const links = items.map(([label, path]) =>
+    `<a href="/api/evidence/${encodeURIComponent(fileName(path))}"
+        target="_blank" rel="noopener">${esc(label)}</a>`).join("");
+  const crop = e.plate_path
+    ? `<img class="crop" alt="plate crop"
+           src="/api/evidence/${encodeURIComponent(fileName(e.plate_path))}">`
+    : "";
+  return `<h4 class="sec">Evidence</h4><div class="ev">${links}</div>${crop}`;
+}
+
+/* -------------------------------------------------------------- incidents */
+let mode = "alerts";
+
+function incidentRow(inc) {
+  const sev = inc.peak_severity || "LOW";
+  const cams = (inc.cameras || []).join(", ");
+  const beh = (inc.behaviours || []).join(", ");
+  const zones = (inc.zones || []).filter(Boolean).join(", ");
+  const span = inc.started === inc.ended ? clock(inc.started)
+             : clock(inc.started) + " – " + clock(inc.ended);
+  return `
+    <div class="alert ${sev}" data-peak="${esc(inc.peak_event_id || "")}">
+      <div class="r1">
+        <span class="ttl">${esc(inc.object || "OBJECT")}${
+          inc.plate ? " · " + esc(inc.plate) : ""}${
+          zones ? " in " + esc(zones) : ""}</span>
+        <span class="t">${span}</span>
+      </div>
+      <div class="r2">
+        <span class="meta">${esc(cams)} · ${inc.events}
+          ${inc.events === 1 ? "alert" : "alerts"}${beh ? " · " + esc(beh) : ""}</span>
+        <span class="badge ${sev}">${esc(sev)} ${inc.peak_score != null ? inc.peak_score : ""}</span>
+      </div>
+    </div>`;
+}
+
+async function paintIncidents() {
+  try {
+    const data = await get("/api/incidents");
+    const rows = data.incidents || [];
+    $("alertList").innerHTML = rows.length
+      ? rows.map(incidentRow).join("")
+      : '<div class="empty">no incidents yet</div>';
+  } catch (err) {
+    $("alertList").innerHTML = '<div class="empty">could not load incidents</div>';
+  }
+}
+
+function setMode(next) {
+  mode = next;
+  $("tabAlerts").classList.toggle("on", mode === "alerts");
+  $("tabIncidents").classList.toggle("on", mode === "incidents");
+  $("listTitle").textContent = mode === "alerts" ? "Recent alerts" : "Incidents";
+  if (mode === "alerts") paintAlerts(); else paintIncidents();
+}
+
+/* ------------------------------------------------------------------- wire */
+$("tabAlerts").addEventListener("click", () => setMode("alerts"));
+$("tabIncidents").addEventListener("click", () => setMode("incidents"));
+
+$("alertList").addEventListener("click", async (ev) => {
+  const row = ev.target.closest(".alert");
+  if (!row) return;
+  if (row.dataset.id) return showEvent(row.dataset.id);
+  // An incident row opens its peak event - the worst moment is the one worth
+  // reading, and it may not be in the list already loaded.
+  const peak = row.dataset.peak;
+  if (!peak) return;
+  if (!byId[peak]) {
+    try { byId[peak] = await get("/api/events/" + encodeURIComponent(peak)); }
+    catch (err) { return; }
+  }
+  showEvent(peak);
+});
+$("mClose").addEventListener("click", () => $("scrim").classList.remove("on"));
+$("scrim").addEventListener("click", (ev) => {
+  if (ev.target === $("scrim")) $("scrim").classList.remove("on");
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") $("scrim").classList.remove("on");
+});
+/* ------------------------------------------------------------------ views */
+// Which panel each page shows, and where it sits on the overview. The panel
+// node itself is moved rather than copied: a duplicate would mean duplicate
+// ids and a second <img> pulling a second video stream off one camera.
+const PAGES = {
+  dashboard:    null,
+  surveillance: {panel: "cams",   page: "page-cams",   home: "slot-cams"},
+  alertsPage:   {panel: "alerts", page: "page-alerts", home: "slot-alerts"},
+  behPage:      {panel: "beh",    page: "page-beh",    home: "slot-beh"},
+  // The map page is the camera placer, which draws its own map; the overview
+  // map stays on the dashboard, so it has a home but no page to move to.
+  mapPage:      {panel: "map",    page: null,          home: "slot-map"},
+  fleetPage:    {panel: "fleet",  page: "page-fleet",  home: "slot-fleet"},
+  zonesPage:    null,
+};
+
+const TITLES = {
+  dashboard:    ["Command center", "Real-time border monitoring and threat intelligence"],
+  surveillance: ["Live surveillance", "Every camera, annotated as the system sees it"],
+  alertsPage:   ["Alerts and incidents", "What fired, and why it scored what it did"],
+  behPage:      ["Behaviour intelligence", "What the post has been seeing, by pattern"],
+  mapPage:      ["Map and geofence", "Place each camera, and point it where it looks"],
+  fleetPage:    ["Camera fleet", "Throughput and health, camera by camera"],
+  zonesPage:    ["Zone settings", "Draw the fences this camera watches"],
+};
+
+function homeEveryPanel() {
+  Object.values(PAGES).forEach(spec => {
+    if (!spec) return;
+    const slot = $(spec.home);
+    const panel = $(spec.panel);
+    if (slot && panel && panel.parentElement !== slot) slot.appendChild(panel);
+  });
+}
+
+let view = "dashboard";
+function showView(next) {
+  if (!(next in PAGES)) return;
+  view = next;
+
+  homeEveryPanel();
+  const spec = PAGES[next];
+  if (spec && spec.page) $(spec.page).appendChild($(spec.panel));
+
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("on"));
+  $("view-" + next).classList.add("on");
+  document.querySelectorAll(".nav a").forEach(a =>
+    a.classList.toggle("on", a.dataset.view === next));
+
+  const titles = TITLES[next] || TITLES.dashboard;
+  document.querySelector(".top h2").textContent = titles[0];
+  document.querySelector(".top p").textContent = titles[1];
+
+  syncStreams();                     // stop or start streams for what is on screen now
+  if (next === "zonesPage") openEditor();
+  if (next === "mapPage") openPlacer();
+  window.scrollTo({top: 0, behavior: "smooth"});
+}
+
+document.querySelectorAll(".nav a[data-view]").forEach(a => {
+  a.addEventListener("click", () => showView(a.dataset.view));
+});
+homeEveryPanel();
+
+/* ------------------------------------------------------------ zone editor */
+let zPoints = [];        // corners of the fence being drawn, normalized 0..1
+let zZones = [];         // fences on this camera, saved or pending
+let zDirty = false;
+let zCamera = null;
+
+const KIND_COLOUR = {RESTRICTED: "#f43f5e", WATCH: "#facc15", PATROL: "#38bdf8"};
+
+function zNote(text, bad) {
+  const note = $("zNote");
+  note.textContent = text;
+  note.className = "note on " + (bad ? "bad" : "ok");
+  if (!bad) setTimeout(() => note.classList.remove("on"), 4000);
+}
+
+async function openEditor() {
+  const select = $("zCamera");
+  if (!select.options.length) {
+    try {
+      const status = await get("/api/status");
+      const names = (status.cameras || []).map(c => c.camera_id)
+        .concat((status.skipped || []).map(s => s.camera_id));
+      select.innerHTML = names.length
+        ? names.map(n => "<option>" + esc(n) + "</option>").join("")
+        : "<option value=''>no cameras</option>";
+    } catch (err) { return; }
+  }
+  if (select.value && select.value !== zCamera) await loadCamera(select.value);
+}
+
+async function loadCamera(camera) {
+  zCamera = camera;
+  zPoints = [];
+  zDirty = false;
+  try {
+    const data = await get("/api/cameras/" + encodeURIComponent(camera) + "/zones");
+    zZones = data.zones || [];
+  } catch (err) {
+    zZones = [];
+    zNote("could not read this camera's fences", true);
+  }
+  paintCanvas();
+  paintZoneList();
+}
+
+function paintCanvas() {
+  const canvas = $("zCanvas");
+  const src = "/api/cameras/" + encodeURIComponent(zCamera) + "/snapshot?t=" + Date.now();
+  canvas.innerHTML =
+    '<img id="zShot" alt="' + esc(zCamera) + ' frame" src="' + src + '">' +
+    '<svg id="zOverlay" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>';
+
+  // A camera that has produced no frame yet cannot be drawn on, and saying so
+  // beats an empty box the operator has to guess about.
+  $("zShot").addEventListener("error", () => {
+    canvas.innerHTML = '<div class="waiting">' + esc(zCamera) +
+      " has produced no frame yet.<br>Start the camera, then refresh the picture.</div>";
+  });
+  paintOverlay();
+}
+
+function paintOverlay() {
+  $("zAdd").disabled = zPoints.length < 3;
+  $("zSave").disabled = !zDirty;
+  const svg = $("zOverlay");
+  if (!svg) return;
+
+  const shapes = zZones.map(z => {
+    const colour = KIND_COLOUR[z.kind] || "#93a3b8";
+    const pts = (z.polygon || []).map(pt => (pt[0] * 100) + "," + (pt[1] * 100)).join(" ");
+    return '<polygon points="' + pts + '" fill="' + colour + '22" stroke="' + colour +
+           '" stroke-width="0.4" vector-effect="non-scaling-stroke"/>';
+  });
+
+  if (zPoints.length) {
+    const pts = zPoints.map(pt => (pt[0] * 100) + "," + (pt[1] * 100)).join(" ");
+    shapes.push(zPoints.length > 2
+      ? '<polygon points="' + pts + '" fill="#22d3ee33" stroke="#22d3ee" ' +
+        'stroke-width="0.5" vector-effect="non-scaling-stroke"/>'
+      : '<polyline points="' + pts + '" fill="none" stroke="#22d3ee" ' +
+        'stroke-width="0.5" vector-effect="non-scaling-stroke"/>');
+    zPoints.forEach(pt => shapes.push(
+      '<circle cx="' + (pt[0] * 100) + '" cy="' + (pt[1] * 100) + '" r="0.9" fill="#22d3ee"/>'));
+  }
+  svg.innerHTML = shapes.join("");
+}
+
+$("zCanvas").addEventListener("click", (ev) => {
+  const shot = $("zShot");
+  if (!shot) return;
+  const box = shot.getBoundingClientRect();
+  const x = (ev.clientX - box.left) / box.width;
+  const y = (ev.clientY - box.top) / box.height;
+  if (x < 0 || x > 1 || y < 0 || y > 1) return;
+  zPoints.push([+x.toFixed(4), +y.toFixed(4)]);
+  paintOverlay();
+});
+
+$("zUndo").addEventListener("click", () => { zPoints.pop(); paintOverlay(); });
+$("zClear").addEventListener("click", () => { zPoints = []; paintOverlay(); });
+$("zRefresh").addEventListener("click", () => { if (zCamera) paintCanvas(); });
+$("zCamera").addEventListener("change", (ev) => loadCamera(ev.target.value));
+$("zReload").addEventListener("click", () => { if (zCamera) loadCamera(zCamera); });
+
+$("zAdd").addEventListener("click", () => {
+  if (zPoints.length < 3) return;
+  const name = ($("zName").value || "").trim().toUpperCase();
+  if (!name) { zNote("give the fence a name first", true); return; }
+  if (zZones.some(z => z.name === name)) {
+    zNote("there is already a fence called " + name, true);
+    return;
+  }
+  zZones.push({
+    name: name,
+    kind: $("zKind").value,
+    base_risk: Math.max(0, Math.min(100, parseInt($("zRisk").value, 10) || 50)),
+    description: "Drawn in the dashboard.",
+    objects: $("zObjects").value.split(","),
+    polygon: zPoints,
+  });
+  zPoints = [];
+  $("zName").value = "";
+  zDirty = true;
+  paintZoneList();
+});
+
+function paintZoneList() {
+  const rows = zZones.map((z, i) =>
+    '<div class="zrow">' +
+      '<span class="sw" style="background:' + (KIND_COLOUR[z.kind] || "#93a3b8") + '"></span>' +
+      '<span class="nm">' + esc(z.name) + "</span>" +
+      '<span class="k">' + esc(z.kind) + " &middot; " + z.base_risk + "</span>" +
+      '<button class="btn danger" data-drop="' + i +
+        '" style="padding:2px 8px;font-size:11px">Remove</button>' +
+    "</div>");
+  $("zList").innerHTML = rows.length ? rows.join("")
+    : '<div class="hint">no fences on this camera yet</div>';
+  paintOverlay();
+}
+
+$("zList").addEventListener("click", (ev) => {
+  const button = ev.target.closest("[data-drop]");
+  if (!button) return;
+  zZones.splice(+button.dataset.drop, 1);
+  zDirty = true;
+  paintZoneList();
+});
+
+$("zSave").addEventListener("click", async () => {
+  if (!zCamera) return;
+  $("zSave").disabled = true;
+  try {
+    const response = await fetch("/api/cameras/" + encodeURIComponent(zCamera) + "/zones", {
+      method: "PUT",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({zones: zZones}),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      // The server validates before writing, so a rejection means nothing was
+      // saved and the camera is still running the fences it had.
+      zNote(result.detail || "the fences were rejected - nothing was saved", true);
+      $("zSave").disabled = false;
+      return;
+    }
+    zDirty = false;
+    zNote(result.applied_live
+      ? "saved " + result.saved + " fence(s) - already in force on " + zCamera
+      : "saved " + result.saved + " fence(s) - applies when " + zCamera + " next starts");
+  } catch (err) {
+    zNote("could not reach the server", true);
+    $("zSave").disabled = false;
+  }
+});
+
+setInterval(() => { $("clock").textContent = new Date().toLocaleTimeString(); }, 1000);
+
+function remember(list) {
+  events = list;
+  list.forEach(e => { byId[e.event_id] = e; });
+  if (mode === "alerts") paintAlerts();
+  paintFeed();
+}
+
+// Stamped by the server when it sends the page.
+const UI_VERSION = "__UI_VERSION__";
+$("updReload").addEventListener("click", () => location.reload());
+
+async function poll() {
+  try {
+    const [status, summary, behaviours, incidents] = await Promise.all([
+      get("/api/status"), get("/api/summary"),
+      get("/api/behaviours"), get("/api/incidents"),
+    ]);
+    // Not a silent reload: somebody may be halfway through placing a camera.
+    if (status.ui_version && status.ui_version !== UI_VERSION) $("updated").hidden = false;
+    paintStats(status, summary, incidents);
+    paintFleet(status);
+    paintBehaviours(behaviours);
+    paintCameras(status, window.__siteMap);
+    // Pins follow the fleet: a camera that stops or alerts changes colour.
+    window.__status = status;
+    if (overview) overview.paint();
+  } catch (err) {
+    // A poll that fails is not a reason to blank a dashboard somebody is
+    // watching. The link indicator already says the connection is down.
+    console.warn("poll failed:", err);
+  }
+}
+
+function connect() {
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(proto + "://" + location.host + "/ws");
+
+  ws.onopen = () => {
+    $("linkDot").className = "dot live";
+    $("linkText").textContent = "operational";
+  };
+  ws.onmessage = (m) => {
+    let msg;
+    try { msg = JSON.parse(m.data); } catch (e) { return; }
+    if (msg.type === "snapshot") {
+      remember(msg.events || []);
+    } else if (msg.type === "alert" && msg.event) {
+      remember([msg.event].concat(events).slice(0, 200));
+      poll();
+    }
+  };
+  const drop = () => {
+    $("linkDot").className = "dot dead";
+    $("linkText").textContent = "reconnecting";
+    setTimeout(connect, 2500);
+  };
+  ws.onclose = drop;
+  ws.onerror = () => ws.close();
+}
+
+/* --------------------------------------------------------- camera placer */
+// The same map widget as the dashboard, with clicks that place a camera and
+// shift-clicks that aim it. Positions, directions and saving work the same on
+// imagery or on the grid: a post with no internet loses the picture, not the tool.
+let mMap = null;       // the last /api/map payload
+let mSel = null;       // selected camera id
+let mDraft = null;     // the position being edited, not yet saved
+let mDirty = false;
+let placer = null;
+
+const okLat = (v) => typeof v === "number" && isFinite(v) && v >= -90 && v <= 90;
+const okLon = (v) => typeof v === "number" && isFinite(v) && v >= -180 && v <= 180;
+const hasPos = (d) => d && okLat(d.lat) && okLon(d.lon);
+
+function mNote(text, bad) {
+  const note = $("mNote");
+  note.textContent = text;
+  note.className = "note on " + (bad ? "bad" : "ok");
+  if (!bad) setTimeout(() => note.classList.remove("on"), 5000);
+}
+
+function mPlaced(id) {
+  return ((mMap && mMap.cameras) || []).find(c => c.camera_id === id) || null;
+}
+
+function mCameras() {
+  const ids = ((mMap && mMap.cameras) || []).map(c => c.camera_id)
+    .concat((mMap && mMap.unplaced) || []);
+  return [...new Set(ids)].sort();
+}
+
+function mBearingTo(lat1, lon1, lat2, lon2) {
+  const p1 = rad(lat1), p2 = rad(lat2), dl = rad(lon2 - lon1);
+  const y = Math.sin(dl) * Math.cos(p2);
+  const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+  return (deg(Math.atan2(y, x)) + 360) % 360;
+}
+
+function mCompass(b) {
+  return ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(b / 45) % 8];
+}
+
+function placerMap() {
+  if (!placer) {
+    placer = new SxMap($("mCanvas"), {
+      w: 900, h: 560, overlay: placerOverlay, onClick: placeAt,
+      onMove: (lat, lon) => {
+        $("mCursor").textContent = lat == null ? "" : lat.toFixed(6) + ", " + lon.toFixed(6);
+      },
+    });
+  }
+  placer.site = mMap;
+  return placer;
+}
+
+function mFitView() {
+  const pts = sitePoints(mMap);
+  if (hasPos(mDraft)) pts.push([mDraft.lat, mDraft.lon]);
+  placer.fit(pts);
+}
+
+async function openPlacer() {
+  try {
+    mMap = await get("/api/map");
+  } catch (err) {
+    mNote("Could not read the map from the server.", true);
+    return;
+  }
+  placerMap();
+  if (mDirty) { placer.paint(); return; }          // never throw away an unsaved move
+  const ids = mCameras();
+  selectCamera(ids.includes(mSel) ? mSel : (ids[0] || null), !!placer.view);
+  if (!mMap.editable) {
+    mNote("This server was started with a single --source, so positions cannot be " +
+          "saved. Run python serve.py to use the fleet file.", true);
+  }
+}
+
+function selectCamera(id, keepView) {
+  if (mDirty && id !== mSel &&
+      !confirm("Discard the unsaved position for " + mSel + "?")) {
+    paintList();
+    return;
+  }
+  mSel = id;
+  mDirty = false;
+  const c = mPlaced(id);
+  mDraft = c
+    ? {lat: c.lat, lon: c.lon, site: c.site || "", mode: camMode(c),
+       bearing: c.bearing != null ? c.bearing : 0,
+       fov: c.fov != null && c.fov < 360 ? c.fov : 70, height: c.height_m}
+    : {lat: null, lon: null, site: "", mode: "none", bearing: 0, fov: 70, height: null};
+  if (!keepView || !placer.view) mFitView();
+  else if (hasPos(mDraft) && !placer.inView(mDraft.lat, mDraft.lon)) placer.goTo(mDraft.lat, mDraft.lon, 15);
+  fillForm();
+  paintList();
+  placer.paint();
+}
+
+function paintList() {
+  const ids = mCameras();
+  $("mList").innerHTML = ids.length ? ids.map(id => {
+    const placed = !!mPlaced(id);
+    return '<button data-cam="' + esc(id) + '" class="' + (id === mSel ? "on" : "") + '">' +
+      "<b>" + esc(id) + "</b>" +
+      '<span class="st' + (placed ? " placed" : "") + '">' +
+      (placed ? "on map" : "not placed") + "</span></button>";
+  }).join("") : '<div class="hint" style="padding:8px">no cameras in this fleet</div>';
+  const placed = ((mMap && mMap.cameras) || []).length;
+  $("mTag").textContent = mMap
+    ? (mMap.editable ? placed + " of " + ids.length + " placed" : "read-only · started with --source")
+    : "";
+}
+
+function fillForm() {
+  const d = mDraft || {};
+  $("mLat").value = okLat(d.lat) ? d.lat : "";
+  $("mLon").value = okLon(d.lon) ? d.lon : "";
+  $("mSite").value = d.site || "";
+  $("mMode").value = d.mode || "none";
+  $("mBearing").value = d.bearing || 0;
+  $("mFov").value = d.fov || 70;
+  $("mHeight").value = d.height != null ? d.height : "";
+  document.querySelectorAll(".aimrow").forEach(r => r.classList.toggle("off", d.mode !== "fixed"));
+  $("mBearingOut").textContent = d.mode === "360" ? "all round"
+    : Math.round(d.bearing || 0) + "° " + mCompass(d.bearing || 0);
+  $("mFovOut").textContent = d.mode === "360" ? "360°" : Math.round(d.fov || 70) + "°";
+  mButtons();
+}
+
+function mButtons() {
+  const editable = !!(mMap && mMap.editable);
+  $("mSave").disabled = !(mSel && mDirty && hasPos(mDraft) && editable);
+  $("mRevert").disabled = !mDirty;
+  $("mRemove").disabled = !(mSel && mPlaced(mSel) && editable);
+}
+
+function placerOverlay(map) {
+  const view = map.view;
+  const stateOf = cameraStates();
+  let svg = map.base() ? "" : gridSvg(map);
+  (mMap.geofences || []).forEach(f => { svg += fenceSvg(view, f, 12); });
+
+  // Big enough to see at any zoom, never less than the 120 m the server draws:
+  // it shows which way a camera points, not how far it can see.
+  const reach = Math.max(120, 28 * metresPerPx(view.lat, view.zoom));
+  const others = (mMap.cameras || []).filter(c => c.camera_id !== mSel);
+
+  others.forEach(c => {
+    const mode = camMode(c);
+    if (mode !== "none")
+      svg += `<polygon points="${coverageSvg(view, c.lat, c.lon, mode, c.bearing, c.fov, reach)}"
+               fill="#22d3ee26" stroke="#22d3ee99" stroke-width="1.2"/>`;
+  });
+  others.forEach(c => {
+    const [x, y] = toScreen(view, c.lat, c.lon);
+    const label = c.site || c.camera_id;
+    svg += pinSvg(x, y, stateOf(c.camera_id), c.camera_id + " · " + label, 1) +
+      `<text x="${x.toFixed(1)}" y="${(y - 34).toFixed(1)}" fill="#e8eef5" font-size="12"
+        text-anchor="middle" ${HALO}>${esc(label)}</text>`;
+  });
+
+  const saved = mPlaced(mSel);
+  if (saved && mDirty && (saved.lat !== mDraft.lat || saved.lon !== mDraft.lon)) {
+    const [x, y] = toScreen(view, saved.lat, saved.lon);
+    svg += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="7" fill="none"
+             stroke="#e8eef5" stroke-width="1.5" stroke-dasharray="3 3"/>`;
+  }
+
+  if (hasPos(mDraft)) {
+    if (mDraft.mode !== "none")
+      svg += `<polygon points="${coverageSvg(view, mDraft.lat, mDraft.lon, mDraft.mode, mDraft.bearing, mDraft.fov, reach)}"
+               fill="#22d3ee3d" stroke="#22d3ee" stroke-width="1.8"/>`;
+    const [x, y] = toScreen(view, mDraft.lat, mDraft.lon);
+    svg += `<ellipse cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" rx="14" ry="5.5" fill="none"
+             stroke="#22d3ee" stroke-width="2" ${mDirty ? 'stroke-dasharray="4 3"' : ""}/>` +
+      pinSvg(x, y, "selected", mSel, 1.2) +
+      `<text x="${x.toFixed(1)}" y="${(y - 41).toFixed(1)}" fill="#ffffff" font-size="13"
+        font-weight="600" text-anchor="middle" ${HALO}>${esc(mDraft.site || mSel)}${mDirty ? " · unsaved" : ""}</text>`;
+  }
+  return svg + mapChrome(map);
+}
+
+function placeAt(lat, lon, ev) {
+  if (!mSel || !mDraft) return;
+  if (ev.shiftKey) {
+    if (!hasPos(mDraft)) { mNote("Place the camera first, then shift-click to point it.", true); return; }
+    mDraft.bearing = Math.round(mBearingTo(mDraft.lat, mDraft.lon, lat, lon)) % 360;
+    mDraft.mode = "fixed";
+  } else {
+    mDraft.lat = +lat.toFixed(6);
+    mDraft.lon = +lon.toFixed(6);
+  }
+  mEdited();
+}
+
+function mEdited() {
+  mDirty = true;
+  fillForm();
+  placer.paint();
+}
+
+$("mFit").addEventListener("click", () => { if (placer && mMap) { mFitView(); placer.paint(); } });
+$("mIndia").addEventListener("click", () => {
+  if (placer) { placer.view = fitView([], placer.w, placer.h, 18); placer.paint(); }
+});
+
+$("mList").addEventListener("click", (ev) => {
+  const row = ev.target.closest("[data-cam]");
+  if (row) selectCamera(row.dataset.cam, true);
+});
+
+// Accepts what Google Maps copies ("28.613939, 77.209023") and the degree
+// forms people type ("28.6139° N, 77.2090° E").
+$("mPaste").addEventListener("input", (ev) => {
+  const text = ev.target.value;
+  const nums = text.match(/-?\d+(?:\.\d+)?/g);
+  if (!mDraft || !placer || !nums || nums.length < 2) return;
+  let lat = parseFloat(nums[0]), lon = parseFloat(nums[1]);
+  if (/\bS\b|°\s*S/i.test(text)) lat = -Math.abs(lat);
+  if (/\bW\b|°\s*W/i.test(text)) lon = -Math.abs(lon);
+  if (!okLat(lat) || !okLon(lon)) { mNote("Those are not coordinates on Earth.", true); return; }
+  mDraft.lat = +lat.toFixed(7);
+  mDraft.lon = +lon.toFixed(7);
+  if (placer.view) placer.goTo(lat, lon, 17);
+  mEdited();
+});
+
+["mLat", "mLon"].forEach(id => $(id).addEventListener("input", () => {
+  if (!mDraft || !placer) return;
+  const lat = parseFloat($("mLat").value), lon = parseFloat($("mLon").value);
+  mDraft.lat = okLat(lat) ? lat : null;
+  mDraft.lon = okLon(lon) ? lon : null;
+  if (placer.view && hasPos(mDraft) && !placer.inView(mDraft.lat, mDraft.lon))
+    placer.goTo(mDraft.lat, mDraft.lon, 15);
+  mDirty = true;
+  mButtons();
+  placer.paint();
+}));
+
+$("mSite").addEventListener("input", (ev) => {
+  if (!mDraft || !placer) return;
+  mDraft.site = ev.target.value;
+  mDirty = true; mButtons(); placer.paint();
+});
+
+$("mMode").addEventListener("change", (ev) => {
+  if (!mDraft) return;
+  mDraft.mode = ev.target.value;
+  mEdited();
+});
+
+$("mBearing").addEventListener("input", (ev) => {
+  if (!mDraft) return;
+  mDraft.bearing = +ev.target.value;
+  mEdited();
+});
+
+$("mFov").addEventListener("input", (ev) => {
+  if (!mDraft) return;
+  mDraft.fov = +ev.target.value;
+  mEdited();
+});
+
+$("mHeight").addEventListener("input", (ev) => {
+  if (!mDraft) return;
+  const h = parseFloat(ev.target.value);
+  mDraft.height = isFinite(h) && h >= 0 ? h : null;
+  mDirty = true; mButtons();
+});
+
+async function mRefresh(id) {
+  mMap = await get("/api/map");
+  window.__siteMap = mMap;
+  placer.site = mMap;
+  paintMap(mMap);                                  // the dashboard overview too
+  mDirty = false;
+  selectCamera(id, true);
+}
+
+$("mSave").addEventListener("click", async () => {
+  if (!mSel || !hasPos(mDraft)) return;
+  $("mSave").disabled = true;
+  const body = {
+    lat: mDraft.lat, lon: mDraft.lon, site: mDraft.site,
+    // "Not surveyed" sends no direction at all: a wedge from a guessed bearing
+    // points confidently at the wrong hillside. A 360-degree camera needs none.
+    bearing: mDraft.mode === "fixed" ? mDraft.bearing : null,
+    fov: mDraft.mode === "fixed" ? mDraft.fov : (mDraft.mode === "360" ? 360 : null),
+    height_m: mDraft.height,
+  };
+  try {
+    const response = await fetch("/api/map/cameras/" + encodeURIComponent(mSel), {
+      method: "PUT",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      // The server checks before it writes, so a refusal means nothing changed.
+      mNote("Not saved: " + (result.detail || response.status), true);
+      mButtons();
+      return;
+    }
+    await mRefresh(mSel);
+    mNote(result.warning || (mSel + " saved - it is on the map now"), false);
+  } catch (err) {
+    mNote("Could not reach the server - nothing was saved.", true);
+    mButtons();
+  }
+});
+
+$("mRevert").addEventListener("click", () => {
+  mDirty = false;
+  selectCamera(mSel, true);
+});
+
+$("mRemove").addEventListener("click", async () => {
+  if (!mSel || !confirm("Take " + mSel + " off the map? It keeps running - it only loses its position.")) return;
+  try {
+    const response = await fetch("/api/map/cameras/" + encodeURIComponent(mSel), {method: "DELETE"});
+    const result = await response.json();
+    if (!response.ok) { mNote("Not removed: " + (result.detail || response.status), true); return; }
+    await mRefresh(mSel);
+    mNote(mSel + " is off the map", false);
+  } catch (err) {
+    mNote("Could not reach the server - nothing was changed.", true);
+  }
+});
+
+get("/api/map").then(m => { window.__siteMap = m; paintMap(m); }).catch(() => {});
+poll();
+connect();
+setInterval(poll, 3000);
+</script>
+</body>
+</html>
