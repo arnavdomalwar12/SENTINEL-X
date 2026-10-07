@@ -22,3 +22,9 @@ data/evidence/*.mp4
 .vscode/
 .idea/
 .DS_Store
+
+models/*.pt
+models/*.onnx
+data/evidence/*
+data/events/*
+__pycache__/
