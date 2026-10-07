@@ -1,0 +1,30 @@
+# Virtual Environments
+.venv/
+venv/
+env/
+
+# Python Cache
+__pycache__/
+*.pyc
+
+# Heavy Models & Weights
+models/*.pt
+models/*.onnx
+*.weights
+
+# Local Data & Evidence
+data/events/*.jsonl
+data/evidence/*.jpg
+data/evidence/*.mp4
+*.sqlite3
+
+# IDE & OS Files
+.vscode/
+.idea/
+.DS_Store
+
+models/*.pt
+models/*.onnx
+data/evidence/*
+data/events/*
+__pycache__/
